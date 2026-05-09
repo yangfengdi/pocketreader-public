@@ -104,7 +104,7 @@ class Database:
                     title, body, source_type, source_url, source_filename,
                     reader_mode, voice, status, error, text_char_count, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     clean_title,
