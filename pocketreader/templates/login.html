@@ -1,0 +1,20 @@
+{% extends "layout.html" %}
+{% block title %}登录 - PocketReader{% endblock %}
+{% block content %}
+<section class="login-panel">
+  <h1>登录</h1>
+  <form class="stack" action="/login" method="post">
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+    <label>
+      <span>用户名</span>
+      <input name="username" autocomplete="username" required>
+    </label>
+    <label>
+      <span>密码</span>
+      <input name="password" type="password" autocomplete="current-password" required>
+    </label>
+    <button type="submit">进入</button>
+  </form>
+</section>
+{% endblock %}
+

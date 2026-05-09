@@ -1,0 +1,26 @@
+reader.example.com {
+	encode gzip zstd
+
+	tls {
+		issuer acme {
+			disable_http_challenge
+		}
+	}
+
+	request_body {
+		max_size 50MB
+	}
+
+	reverse_proxy 127.0.0.1:4780
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+	}
+
+	log {
+		output file /var/log/apps/pocketreader/caddy-access.log
+	}
+}
+

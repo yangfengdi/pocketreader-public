@@ -1,0 +1,2 @@
+"""PocketReader application package."""
+

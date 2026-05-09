@@ -1,0 +1,127 @@
+{% extends "layout.html" %}
+{% block title %}列表 - PocketReader{% endblock %}
+{% block content %}
+<section class="import-grid">
+  <form class="panel stack" action="/items/text" method="post">
+    <h1>导入文本</h1>
+    <label>
+      <span>标题</span>
+      <input name="title" placeholder="可选">
+    </label>
+    <label>
+      <span>文本或 Markdown</span>
+      <textarea name="text" rows="8" required placeholder="粘贴要朗读的内容"></textarea>
+    </label>
+    <div class="two-cols">
+      <label>
+        <span>声音</span>
+        <select name="voice">
+          {% for voice in voices %}
+          <option value="{{ voice.id }}" {% if voice.id == default_voice %}selected{% endif %}>{{ voice.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span>AI 对话</span>
+        <select name="reader_mode">
+          <option value="assistant" selected>只读 AI 回复</option>
+          <option value="all">用户和 AI 都读</option>
+        </select>
+      </label>
+    </div>
+    <button type="submit">加入队列</button>
+  </form>
+
+  <form class="panel stack" action="/items/files" method="post" enctype="multipart/form-data">
+    <h2>批量文件</h2>
+    <label>
+      <span>选择 .txt / .md 文件</span>
+      <input name="files" type="file" accept=".txt,.md,.markdown,text/plain,text/markdown" multiple required>
+    </label>
+    <div class="two-cols">
+      <label>
+        <span>声音</span>
+        <select name="voice">
+          {% for voice in voices %}
+          <option value="{{ voice.id }}" {% if voice.id == default_voice %}selected{% endif %}>{{ voice.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span>AI 对话</span>
+        <select name="reader_mode">
+          <option value="assistant" selected>只读 AI 回复</option>
+          <option value="all">用户和 AI 都读</option>
+        </select>
+      </label>
+    </div>
+    <button type="submit">上传并生成</button>
+  </form>
+
+  <form class="panel stack" action="/items/url" method="post">
+    <h2>链接</h2>
+    <label>
+      <span>URL</span>
+      <input name="url" type="url" required placeholder="https://...">
+    </label>
+    <label>
+      <span>标题</span>
+      <input name="title" placeholder="可选">
+    </label>
+    <div class="two-cols">
+      <label>
+        <span>声音</span>
+        <select name="voice">
+          {% for voice in voices %}
+          <option value="{{ voice.id }}" {% if voice.id == default_voice %}selected{% endif %}>{{ voice.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span>AI 对话</span>
+        <select name="reader_mode">
+          <option value="assistant" selected>只读 AI 回复</option>
+          <option value="all">用户和 AI 都读</option>
+        </select>
+      </label>
+    </div>
+    <button type="submit">抓取链接</button>
+  </form>
+</section>
+
+<section class="library">
+  <div class="library-head">
+    <h2>内容</h2>
+    <nav class="tabs" aria-label="筛选">
+      <a href="/" class="{% if not status_filter %}active{% endif %}">全部</a>
+      <a href="/?status_filter=ready" class="{% if status_filter == 'ready' %}active{% endif %}">可播放</a>
+      <a href="/?status_filter=processing" class="{% if status_filter == 'processing' %}active{% endif %}">生成中</a>
+      <a href="/?status_filter=queued" class="{% if status_filter == 'queued' %}active{% endif %}">排队</a>
+      <a href="/?status_filter=error" class="{% if status_filter == 'error' %}active{% endif %}">出错</a>
+    </nav>
+  </div>
+
+  {% if items %}
+  <div class="item-list {% if has_active_jobs %}needs-refresh{% endif %}">
+    {% for item in items %}
+    <article class="item-card">
+      <a href="/items/{{ item.id }}" class="item-main">
+        <div class="item-row">
+          <strong>{{ item.title }}</strong>
+          <span class="status {{ item.status }}">{{ item.status|status_label }}</span>
+        </div>
+        <p>{{ item.body[:160] }}{% if item.body|length > 160 %}...{% endif %}</p>
+        <div class="meta">
+          <span>{{ item.created_at|datetime }}</span>
+          <span>{{ item.duration_seconds|duration }}</span>
+          {% if item.completed_at %}<span>已听完</span>{% elif item.playback_position > 0 %}<span>听到 {{ item.playback_position|duration }}</span>{% endif %}
+        </div>
+      </a>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty">还没有内容。</p>
+  {% endif %}
+</section>
+{% endblock %}
