@@ -73,6 +73,5 @@ docker compose logs --tail=200
 - Caddy access log:
 
 ```text
-/var/log/apps/pocketreader/caddy-access.log
+/var/log/caddy/pocketreader-access.log
 ```
-

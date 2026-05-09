@@ -20,7 +20,6 @@ reader.example.com {
 	}
 
 	log {
-		output file /var/log/apps/pocketreader/caddy-access.log
+		output file /var/log/caddy/pocketreader-access.log
 	}
 }
-
