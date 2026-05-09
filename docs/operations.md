@@ -70,8 +70,6 @@ cd /opt/apps/pocketreader
 docker compose logs --tail=200
 ```
 
-- Caddy access log:
-
-```text
-/var/log/caddy/pocketreader-access.log
-```
+- Caddy access logs use the existing Caddy logging behavior. The PocketReader
+  snippet does not create its own Caddy log file because the Caddy systemd
+  sandbox on the production server rejects new log file paths.

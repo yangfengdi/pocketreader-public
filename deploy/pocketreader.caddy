@@ -19,7 +19,4 @@ reader.example.com {
 		Permissions-Policy "camera=(), microphone=(), geolocation=()"
 	}
 
-	log {
-		output file /var/log/caddy/pocketreader-access.log
-	}
 }
