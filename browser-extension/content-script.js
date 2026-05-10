@@ -90,7 +90,9 @@
   });
 
   optionsButton.addEventListener("click", () => {
-    chrome.runtime.openOptionsPage();
+    openOptionsPage().catch((error) => {
+      showStatus(error.message || String(error), "error");
+    });
   });
 
   submitButton.addEventListener("click", async () => {
@@ -128,6 +130,19 @@
     statusNode.textContent = message;
     statusNode.classList.toggle("ok", state === "ok");
     statusNode.classList.toggle("error", state === "error");
+  }
+
+  async function openOptionsPage() {
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: "POCKETREADER_OPEN_OPTIONS"
+      });
+      if (!response || !response.ok) {
+        throw new Error(response && response.error ? response.error : "无法打开扩展设置。");
+      }
+    } catch (_error) {
+      window.open(chrome.runtime.getURL("options.html"), "_blank");
+    }
   }
 })();
 

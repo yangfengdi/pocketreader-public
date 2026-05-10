@@ -45,6 +45,10 @@ The same values are shown in the logged-in web app at:
 https://reader.example.com/extension
 ```
 
+After changing extension files, go back to `chrome://extensions/` and click the
+reload button for PocketReader Capture, then reload any already-open ChatGPT,
+Gemini, or Claude tabs.
+
 ## Usage
 
 1. Open a ChatGPT, Gemini, or Claude conversation in Chrome.

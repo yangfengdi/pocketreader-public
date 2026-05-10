@@ -8,14 +8,25 @@ const DEFAULTS = {
 };
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (!message || message.type !== "POCKETREADER_CAPTURE_SUBMIT") {
+  if (!message) {
     return false;
   }
 
-  submitCapture(message.payload)
-    .then((result) => sendResponse({ ok: true, result }))
-    .catch((error) => sendResponse({ ok: false, error: error.message || String(error) }));
-  return true;
+  if (message.type === "POCKETREADER_OPEN_OPTIONS") {
+    openOptionsPage()
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: error.message || String(error) }));
+    return true;
+  }
+
+  if (message.type === "POCKETREADER_CAPTURE_SUBMIT") {
+    submitCapture(message.payload)
+      .then((result) => sendResponse({ ok: true, result }))
+      .catch((error) => sendResponse({ ok: false, error: error.message || String(error) }));
+    return true;
+  }
+
+  return false;
 });
 
 async function submitCapture(payload) {
@@ -23,7 +34,8 @@ async function submitCapture(payload) {
   const baseUrl = String(settings.baseUrl || DEFAULTS.baseUrl).replace(/\/+$/, "");
   const importToken = String(settings.importToken || "");
   if (!importToken) {
-    throw new Error("请先在扩展设置里填写 IMPORT_TOKEN。");
+    await openOptionsPage();
+    throw new Error("请在打开的扩展设置页填写 IMPORT_TOKEN，然后回到这里重新提交。");
   }
 
   const body = {
@@ -53,4 +65,29 @@ async function submitCapture(payload) {
     throw new Error(`导入失败：${detail}`);
   }
   return data;
+}
+
+function openOptionsPage() {
+  return new Promise((resolve, reject) => {
+    if (typeof chrome.runtime.openOptionsPage === "function") {
+      chrome.runtime.openOptionsPage(() => {
+        const error = chrome.runtime.lastError;
+        if (error) {
+          reject(new Error(error.message));
+          return;
+        }
+        resolve();
+      });
+      return;
+    }
+
+    chrome.tabs.create({ url: chrome.runtime.getURL("options.html") }, () => {
+      const error = chrome.runtime.lastError;
+      if (error) {
+        reject(new Error(error.message));
+        return;
+      }
+      resolve();
+    });
+  });
 }
