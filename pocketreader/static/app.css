@@ -417,9 +417,29 @@ button:disabled {
 }
 
 .back-link {
+  display: inline-flex;
   width: fit-content;
-  color: var(--muted);
+  min-height: 42px;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 6px 18px rgba(20, 32, 50, 0.06);
+  font-weight: 750;
   text-decoration: none;
+}
+
+.back-link:hover {
+  border-color: #b7c4d5;
+  background: var(--surface-2);
+}
+
+.back-link span {
+  font-size: 18px;
+  line-height: 1;
 }
 
 .title-editor {
