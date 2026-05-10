@@ -50,6 +50,7 @@ templates.env.filters["status_label"] = lambda value: status_label(value)
 @app.on_event("startup")
 async def on_startup() -> None:
     db.init()
+    db.requeue_interrupted_items()
     app.state.settings = settings
     app.state.db = db
     app.state.worker_task = asyncio.create_task(worker_loop())
@@ -469,19 +470,46 @@ def safe_audio_filename(title: str) -> str:
 
 
 def build_podcast_feed() -> str:
-    ET.register_namespace("itunes", "http://www.itunes.com/dtds/podcast-1.0.dtd")
+    atom_namespace = "http://www.w3.org/2005/Atom"
+    itunes_namespace = "http://www.itunes.com/dtds/podcast-1.0.dtd"
+    ET.register_namespace("atom", atom_namespace)
+    ET.register_namespace("itunes", itunes_namespace)
+    ready_items = db.ready_items_for_feed()
     rss = ET.Element("rss", version="2.0")
     channel = ET.SubElement(rss, "channel")
     ET.SubElement(channel, "title").text = "PocketReader"
     ET.SubElement(channel, "link").text = settings.base_url
     ET.SubElement(channel, "description").text = "Private PocketReader audio feed"
     ET.SubElement(channel, "language").text = "zh-cn"
-    for item in db.ready_items_for_feed():
+    ET.SubElement(channel, "generator").text = "PocketReader"
+    ET.SubElement(channel, "ttl").text = "60"
+    ET.SubElement(channel, f"{{{itunes_namespace}}}author").text = "PocketReader"
+    ET.SubElement(channel, f"{{{itunes_namespace}}}explicit").text = "false"
+    ET.SubElement(
+        channel,
+        f"{{{atom_namespace}}}link",
+        {
+            "href": f"{settings.base_url}/feed/{settings.feed_token}.xml",
+            "rel": "self",
+            "type": "application/rss+xml",
+        },
+    )
+    if ready_items:
+        latest_updated = max(str(item["updated_at"] or item["created_at"]) for item in ready_items)
+        ET.SubElement(channel, "lastBuildDate").text = format_rss_datetime(latest_updated)
+        ET.SubElement(channel, "pubDate").text = format_rss_datetime(ready_items[0]["created_at"])
+    for item in ready_items:
         episode = ET.SubElement(channel, "item")
         ET.SubElement(episode, "title").text = item["title"]
+        ET.SubElement(episode, "link").text = f"{settings.base_url}/items/{item['id']}"
         ET.SubElement(episode, "description").text = (item["body"] or "")[:500]
-        ET.SubElement(episode, "guid").text = f"pocketreader-{item['id']}"
+        guid = ET.SubElement(episode, "guid", {"isPermaLink": "false"})
+        guid.text = f"pocketreader-{item['id']}"
         ET.SubElement(episode, "pubDate").text = format_rss_datetime(item["created_at"])
+        ET.SubElement(episode, f"{{{itunes_namespace}}}duration").text = format_podcast_duration(
+            item["duration_seconds"]
+        )
+        ET.SubElement(episode, f"{{{itunes_namespace}}}explicit").text = "false"
         audio_url = f"{settings.base_url}/audio/{item['id']}.mp3?token={settings.feed_token}"
         enclosure = ET.SubElement(episode, "enclosure")
         enclosure.set("url", audio_url)
@@ -499,6 +527,17 @@ def format_rss_datetime(value: object) -> str:
     if date_value.tzinfo is None:
         date_value = date_value.replace(tzinfo=UTC)
     return format_rfc2822_datetime(date_value)
+
+
+def format_podcast_duration(value: object) -> str:
+    if value is None:
+        return "0:00"
+    seconds = max(0, int(round(float(value))))
+    minutes, secs = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{secs:02d}"
+    return f"{minutes}:{secs:02d}"
 
 
 def format_duration(value: object) -> str:

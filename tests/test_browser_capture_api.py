@@ -102,6 +102,31 @@ class BrowserCaptureApiTests(unittest.TestCase):
         self.assertEqual(response.headers["content-length"], str(len(b"fake mp3 bytes")))
         self.assertEqual(response.headers["accept-ranges"], "bytes")
 
+    def test_podcast_feed_includes_pocket_cast_compatibility_metadata(self) -> None:
+        item_id = main.db.create_item(
+            title="Feed Item",
+            body="audio body",
+            source_type="text",
+            voice="zh-CN-XiaoxiaoNeural",
+            reader_mode="assistant",
+        )
+        audio_path = Path(os.environ["APP_DATA_DIR"]) / "audio" / str(item_id) / "audio.mp3"
+        audio_path.parent.mkdir(parents=True, exist_ok=True)
+        audio_path.write_bytes(b"fake mp3 bytes")
+        main.db.mark_ready(
+            item_id,
+            audio_path.relative_to(Path(os.environ["APP_DATA_DIR"])).as_posix(),
+            65.0,
+        )
+
+        feed = main.build_podcast_feed()
+
+        self.assertIn('atom:link href="http://127.0.0.1:4780/feed/feed-token.xml"', feed)
+        self.assertIn("<lastBuildDate>", feed)
+        self.assertIn('guid isPermaLink="false"', feed)
+        self.assertIn("<itunes:duration>1:05</itunes:duration>", feed)
+        self.assertIn("<itunes:explicit>false</itunes:explicit>", feed)
+
 
 if __name__ == "__main__":
     unittest.main()

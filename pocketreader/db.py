@@ -82,6 +82,49 @@ class Database:
                 """
             )
 
+    def requeue_interrupted_items(self) -> int:
+        now = utc_now()
+        with self.connect() as conn:
+            rows = list(
+                conn.execute(
+                    """
+                    SELECT id FROM items
+                    WHERE status = 'processing'
+                    ORDER BY created_at ASC, id ASC
+                    """
+                )
+            )
+            if not rows:
+                return 0
+            item_ids = [int(row["id"]) for row in rows]
+            conn.executemany(
+                """
+                UPDATE items
+                SET status = 'queued', error = NULL, updated_at = ?
+                WHERE id = ?
+                """,
+                [(now, item_id) for item_id in item_ids],
+            )
+            conn.executemany(
+                """
+                UPDATE jobs
+                SET status = 'interrupted', error = ?, completed_at = ?
+                WHERE item_id = ? AND completed_at IS NULL
+                """,
+                [
+                    ("Worker stopped before completing this item; requeued automatically.", now, item_id)
+                    for item_id in item_ids
+                ],
+            )
+            conn.executemany(
+                """
+                INSERT INTO jobs (item_id, status, created_at)
+                VALUES (?, 'queued', ?)
+                """,
+                [(item_id, now) for item_id in item_ids],
+            )
+            return len(item_ids)
+
     def create_item(
         self,
         *,
