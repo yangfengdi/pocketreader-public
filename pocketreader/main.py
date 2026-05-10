@@ -116,17 +116,27 @@ async def logout() -> RedirectResponse:
 async def index(request: Request, status_filter: str | None = None) -> HTMLResponse:
     require_user(request)
     valid_status = status_filter if status_filter in {"queued", "processing", "ready", "error"} else None
-    items = db.list_items(valid_status)
-    has_active_jobs = any(item["status"] in {"queued", "processing"} for item in items)
+    all_items = db.list_items()
+    items = [item for item in all_items if item["status"] == valid_status] if valid_status else all_items
+    has_active_jobs = any(item["status"] in {"queued", "processing"} for item in all_items)
+    counts = {
+        "total": len(all_items),
+        "ready": sum(1 for item in all_items if item["status"] == "ready"),
+        "active": sum(1 for item in all_items if item["status"] in {"queued", "processing"}),
+        "error": sum(1 for item in all_items if item["status"] == "error"),
+        "completed": sum(1 for item in all_items if item["completed_at"]),
+    }
     return templates.TemplateResponse(
         request,
         "index.html",
         {
             "items": items,
+            "counts": counts,
             "has_active_jobs": has_active_jobs,
             "status_filter": valid_status,
             "voices": VOICE_OPTIONS,
             "default_voice": settings.default_voice,
+            "feed_url": f"{settings.base_url}/feed/{settings.feed_token}.xml",
             "settings": settings,
         },
     )

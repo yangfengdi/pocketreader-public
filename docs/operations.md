@@ -73,3 +73,25 @@ docker compose logs --tail=200
 - Caddy access logs use the existing Caddy logging behavior. The PocketReader
   snippet does not create its own Caddy log file because the Caddy systemd
   sandbox on the production server rejects new log file paths.
+
+## Failed TTS Items
+
+Open the item page and use `重新生成`. This keeps the same item and reruns the
+worker.
+
+If the error mentions `Unable to choose an output format` for an MP3 temp file,
+check `pocketreader/tts.py`. The merge output must keep an `.mp3` suffix and the
+ffmpeg command should specify `-f mp3`. The regression test is:
+
+```bash
+python -m unittest tests.test_tts
+```
+
+## Regression Checks
+
+Run before deployment:
+
+```bash
+python -m unittest discover -s tests
+python -m compileall pocketreader
+```

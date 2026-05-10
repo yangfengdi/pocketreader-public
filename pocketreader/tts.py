@@ -110,7 +110,7 @@ def concat_mp3(chunk_paths: list[Path], final_path: Path, temp_dir: Path) -> Non
         "".join(f"file '{path.as_posix()}'\n" for path in chunk_paths),
         encoding="utf-8",
     )
-    temp_final = final_path.with_suffix(".mp3.part")
+    temp_final = final_path.with_name(f"{final_path.stem}.part{final_path.suffix}")
     temp_final.unlink(missing_ok=True)
     command = [
         "ffmpeg",
@@ -125,6 +125,8 @@ def concat_mp3(chunk_paths: list[Path], final_path: Path, temp_dir: Path) -> Non
         "libmp3lame",
         "-q:a",
         "2",
+        "-f",
+        "mp3",
         str(temp_final),
     ]
     run_command(command)
@@ -152,4 +154,3 @@ def run_command(command: list[str]) -> None:
         return
     stderr_tail = "\n".join(completed.stderr.splitlines()[-12:])
     raise TtsError(f"Command failed: {' '.join(command)}\n{stderr_tail}")
-

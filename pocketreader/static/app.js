@@ -9,6 +9,50 @@
     }, 5000);
   }
 
+  document.querySelectorAll("[data-import-tabs]").forEach(function (tabs) {
+    tabs.querySelectorAll("[data-target]").forEach(function (button) {
+      button.setAttribute("aria-pressed", button.classList.contains("active") ? "true" : "false");
+      button.addEventListener("click", function () {
+        var targetId = button.dataset.target;
+        tabs.querySelectorAll("[data-target]").forEach(function (other) {
+          var selected = other === button;
+          other.classList.toggle("active", selected);
+          other.setAttribute("aria-pressed", selected ? "true" : "false");
+        });
+        document.querySelectorAll(".import-panel").forEach(function (panel) {
+          panel.classList.toggle("active", panel.id === targetId);
+        });
+      });
+    });
+  });
+
+  document.querySelectorAll("form").forEach(function (form) {
+    form.addEventListener("submit", function () {
+      var button = form.querySelector("button[type='submit']");
+      if (button) {
+        button.disabled = true;
+        button.dataset.originalText = button.textContent;
+        button.textContent = "处理中";
+      }
+    });
+  });
+
+  var copyFeedButton = document.querySelector("[data-copy-feed]");
+  var copyFeedSource = document.querySelector("[data-copy-source]");
+  if (copyFeedButton && copyFeedSource) {
+    copyFeedButton.addEventListener("click", function () {
+      navigator.clipboard.writeText(copyFeedSource.value).then(function () {
+        copyFeedButton.textContent = "已复制";
+        setTimeout(function () {
+          copyFeedButton.textContent = "复制订阅地址";
+        }, 1800);
+      }).catch(function () {
+        copyFeedSource.select();
+        copyFeedButton.textContent = "请手动复制";
+      });
+    });
+  }
+
   var player = document.querySelector(".player");
   if (!player) {
     return;
@@ -101,4 +145,3 @@
     }).catch(function () {});
   }
 })();
-

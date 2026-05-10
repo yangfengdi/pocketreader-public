@@ -3,25 +3,33 @@
 {% block content %}
 <article class="detail">
   <a class="back-link" href="/">返回列表</a>
-  <form class="title-form" action="/items/{{ item.id }}/title" method="post">
-    <input name="title" value="{{ item.title }}" aria-label="标题">
-    <button class="secondary" type="submit">保存标题</button>
-  </form>
 
-  <div class="detail-meta">
-    <span class="status {{ item.status }}">{{ item.status|status_label }}</span>
-    <span>创建：{{ item.created_at|datetime }}</span>
-    {% if item.generated_at %}<span>生成：{{ item.generated_at|datetime }}</span>{% endif %}
-    {% if item.first_played_at %}<span>首次收听：{{ item.first_played_at|datetime }}</span>{% endif %}
-    {% if item.completed_at %}<span>听完：{{ item.completed_at|datetime }}</span>{% endif %}
-  </div>
+  <header class="detail-head">
+    <div>
+      <h1>{{ item.title }}</h1>
+      <div class="detail-meta">
+        <span class="status {{ item.status }}">{{ item.status|status_label }}</span>
+        <span>创建：{{ item.created_at|datetime }}</span>
+        {% if item.generated_at %}<span>生成：{{ item.generated_at|datetime }}</span>{% endif %}
+        {% if item.first_played_at %}<span>首次收听：{{ item.first_played_at|datetime }}</span>{% endif %}
+        {% if item.completed_at %}<span>听完：{{ item.completed_at|datetime }}</span>{% endif %}
+      </div>
+    </div>
+    <details class="title-editor">
+      <summary>编辑标题</summary>
+      <form action="/items/{{ item.id }}/title" method="post">
+        <input name="title" value="{{ item.title }}" aria-label="标题">
+        <button class="secondary" type="submit">保存</button>
+      </form>
+    </details>
+  </header>
 
   {% if item.status == "ready" %}
   <section class="player" data-item-id="{{ item.id }}" data-start="{{ item.playback_position or 0 }}" data-next-url="{% if next_ready_id %}/items/{{ next_ready_id }}{% endif %}">
     <audio controls preload="metadata" src="/audio/{{ item.id }}.mp3"></audio>
-    <div class="controls">
-      <button type="button" data-skip="-15">后退 15 秒</button>
-      <button type="button" data-skip="15">前进 15 秒</button>
+    <div class="player-actions">
+      <button type="button" class="secondary" data-skip="-15">后退 15 秒</button>
+      <button type="button" class="secondary" data-skip="15">前进 15 秒</button>
       <label>
         <span>速度</span>
         <select data-rate>
@@ -32,21 +40,27 @@
           <option value="2">2.0x</option>
         </select>
       </label>
+      <a class="button secondary" href="/audio/{{ item.id }}.mp3">下载 MP3</a>
       <button type="button" data-cache-audio>缓存音频</button>
     </div>
-    <p class="hint">时长 {{ item.duration_seconds|duration }}{% if next_ready_id %}，听完后会自动打开下一条。{% endif %}</p>
+    <div class="player-foot">
+      <span>时长 {{ item.duration_seconds|duration }}</span>
+      {% if item.playback_position > 0 %}<span>上次听到 {{ item.playback_position|duration }}</span>{% endif %}
+      {% if next_ready_id %}<span>听完后自动下一条</span>{% endif %}
+    </div>
   </section>
   {% elif item.status == "error" %}
-  <section class="panel stack">
-    <p class="error">{{ item.error }}</p>
+  <section class="panel stack error-panel">
+    <strong>生成失败</strong>
+    <pre>{{ item.error }}</pre>
     <form action="/items/{{ item.id }}/retry" method="post">
       <button type="submit">重新生成</button>
     </form>
   </section>
   {% else %}
-  <section class="panel stack needs-refresh">
-    <p>当前状态：{{ item.status|status_label }}</p>
-    <p class="hint">页面会自动刷新。</p>
+  <section class="panel stack needs-refresh pending-panel">
+    <strong>{{ item.status|status_label }}</strong>
+    <span>页面会自动刷新。</span>
   </section>
   {% endif %}
 
@@ -66,4 +80,3 @@
   </form>
 </article>
 {% endblock %}
-
