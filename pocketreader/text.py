@@ -23,6 +23,9 @@ def markdown_to_speech_text(markdown: str) -> str:
     text = markdown
     text = re.sub(r"```.*?```", " ", text, flags=re.S)
     text = re.sub(r"`([^`]+)`", r"\1", text)
+    text = re.sub(r"(\*\*|__)(.*?)\1", r"\2", text)
+    text = re.sub(r"(?<!\*)\*([^*\n]+)\*(?!\*)", r"\1", text)
+    text = re.sub(r"(?<!_)_([^_\n]+)_(?!_)", r"\1", text)
     text = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", text)
     text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
     text = re.sub(r"^#{1,6}\s*", "", text, flags=re.M)
@@ -111,4 +114,3 @@ def _split_paragraph(paragraph: str, max_chars: int) -> list[str]:
     if current:
         pieces.append(current)
     return pieces
-

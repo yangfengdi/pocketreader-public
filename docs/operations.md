@@ -87,6 +87,20 @@ ffmpeg command should specify `-f mp3`. The regression test is:
 python -m unittest tests.test_tts
 ```
 
+## AI Share Link Import
+
+PocketReader has platform-specific handling for AI share links.
+
+- ChatGPT share pages are parsed from the embedded React Router conversation
+  payload. The importer skips system/tool/thought/code records and keeps user
+  plus assistant text, with the default UI mode reading assistant replies only.
+- Gemini share pages may return only a sign-in shell to the backend. In that
+  case the item is created as an error with a clear message; paste the
+  conversation text manually as a fallback.
+- Claude share pages can be blocked by regional availability or Cloudflare
+  challenge pages. These are reported as explicit import errors instead of
+  silently reading the wrong page.
+
 ## Regression Checks
 
 Run before deployment:

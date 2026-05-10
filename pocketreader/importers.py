@@ -58,8 +58,17 @@ async def import_url(url: str, reader_mode: str) -> ImportedContent:
         },
     ) as client:
         response = await client.get(url)
-        response.raise_for_status()
         html = response.text
+        if response.status_code >= 400:
+            raise_platform_error(parsed.netloc, html, response.status_code)
+
+    platform_title, platform_messages = extract_platform_conversation(parsed.netloc, html)
+    if platform_messages:
+        body = render_messages(platform_messages, reader_mode)
+        if body:
+            return ImportedContent(title=platform_title, body=body)
+    if is_known_ai_share_host(parsed.netloc):
+        raise_no_conversation_error(parsed.netloc, html)
 
     title, messages = extract_conversation_messages(html)
     if messages:
@@ -71,6 +80,203 @@ async def import_url(url: str, reader_mode: str) -> ImportedContent:
     if not body:
         raise ValueError("Could not extract readable text from this URL.")
     return ImportedContent(title=title or page_title, body=body)
+
+
+def extract_platform_conversation(
+    host: str, html: str
+) -> tuple[str | None, list[dict[str, str]]]:
+    host = host.lower()
+    if host in {"chatgpt.com", "chat.openai.com"}:
+        return extract_chatgpt_share(html)
+    if host == "gemini.google.com":
+        return extract_gemini_share(html)
+    if host in {"claude.ai", "claude.com"}:
+        return extract_claude_share(html)
+    return None, []
+
+
+def is_known_ai_share_host(host: str) -> bool:
+    return host.lower() in {
+        "chatgpt.com",
+        "chat.openai.com",
+        "gemini.google.com",
+        "claude.ai",
+        "claude.com",
+    }
+
+
+def raise_platform_error(host: str, html: str, status_code: int) -> None:
+    host = host.lower()
+    if host in {"claude.ai", "claude.com"} and _looks_like_cloudflare_challenge(html):
+        raise ValueError("Claude 分享页被 Cloudflare challenge 拦截，服务器无法直接读取正文。")
+    raise httpx.HTTPStatusError(
+        f"HTTP {status_code} while fetching URL.",
+        request=httpx.Request("GET", f"https://{host}/"),
+        response=httpx.Response(status_code),
+    )
+
+
+def raise_no_conversation_error(host: str, html: str) -> None:
+    host = host.lower()
+    if host == "gemini.google.com":
+        raise ValueError(
+            "Gemini 分享页在未登录的服务器请求中没有返回对话正文。请先把对话内容复制为文本导入。"
+        )
+    if host in {"claude.ai", "claude.com"}:
+        if "app-unavailable-in-region" in html or "App unavailable in region" in html:
+            raise ValueError("Claude 分享页在当前服务器区域不可用，无法直接读取正文。")
+        if _looks_like_cloudflare_challenge(html):
+            raise ValueError("Claude 分享页被 Cloudflare challenge 拦截，服务器无法直接读取正文。")
+        raise ValueError("Claude 分享页没有返回可解析的对话正文。")
+    if host in {"chatgpt.com", "chat.openai.com"}:
+        raise ValueError("ChatGPT 分享页没有返回可解析的对话正文。")
+    raise ValueError("没有返回可解析的 AI 对话正文。")
+
+
+def _looks_like_cloudflare_challenge(html: str) -> bool:
+    return (
+        "Just a moment..." in html
+        or "cf-mitigated" in html
+        or "challenges.cloudflare.com" in html
+    )
+
+
+def extract_chatgpt_share(html: str) -> tuple[str | None, list[dict[str, str]]]:
+    title = _html_title(html)
+    messages: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for payload in _react_router_stream_payloads(html):
+        try:
+            values = json.loads(payload)
+        except json.JSONDecodeError:
+            continue
+        conversation = _chatgpt_conversation_data(values)
+        if not conversation:
+            continue
+        title_value = _devalue_raw(values, _devalue_object_get(values, conversation, "title"))
+        if isinstance(title_value, str):
+            title = title_value
+        for message in _chatgpt_messages_from_data(values, conversation):
+            key = (message["role"], message["text"])
+            if key in seen:
+                continue
+            seen.add(key)
+            messages.append(message)
+    return title, messages
+
+
+def _react_router_stream_payloads(html: str) -> Iterable[str]:
+    pattern = r"streamController\.enqueue\((\".*?\")\);"
+    for match in re.finditer(pattern, html, flags=re.S):
+        try:
+            payload = json.loads(match.group(1))
+        except json.JSONDecodeError:
+            continue
+        if "serverResponse" in payload:
+            yield payload
+
+
+def _chatgpt_conversation_data(values: list[Any]) -> dict[str, Any] | None:
+    try:
+        loader_data = _devalue_object_get(values, values[0], "loaderData")
+        routes = _devalue_object_get(
+            values,
+            _devalue_raw(values, loader_data),
+            "routes/share.$shareId.($action)",
+        )
+        server_response = _devalue_object_get(
+            values, _devalue_raw(values, routes), "serverResponse"
+        )
+        data = _devalue_object_get(values, _devalue_raw(values, server_response), "data")
+        raw_data = _devalue_raw(values, data)
+    except (IndexError, TypeError):
+        return None
+    return raw_data if isinstance(raw_data, dict) else None
+
+
+def _chatgpt_messages_from_data(
+    values: list[Any], data: dict[str, Any]
+) -> Iterable[dict[str, str]]:
+    linear_ref = _devalue_object_get(values, data, "linear_conversation")
+    linear = _devalue_raw(values, linear_ref)
+    if not isinstance(linear, list):
+        return
+    for node_ref in linear:
+        node = _devalue_raw(values, node_ref)
+        if not isinstance(node, dict):
+            continue
+        message_ref = _devalue_object_get(values, node, "message")
+        message = _devalue_raw(values, message_ref)
+        if not isinstance(message, dict):
+            continue
+        parsed = _chatgpt_message(values, message)
+        if parsed is not None:
+            yield parsed
+
+
+def _chatgpt_message(values: list[Any], message: dict[str, Any]) -> dict[str, str] | None:
+    author = _devalue_raw(values, _devalue_object_get(values, message, "author"))
+    content = _devalue_raw(values, _devalue_object_get(values, message, "content"))
+    if not isinstance(author, dict) or not isinstance(content, dict):
+        return None
+    raw_role = _devalue_raw(values, _devalue_object_get(values, author, "role"))
+    role = ROLE_MAP.get(str(raw_role).lower())
+    if role is None:
+        return None
+    content_type = _devalue_raw(values, _devalue_object_get(values, content, "content_type"))
+    if content_type not in {"text", "multimodal_text"}:
+        return None
+    parts = _devalue_raw(values, _devalue_object_get(values, content, "parts"))
+    if not isinstance(parts, list):
+        return None
+    strings = [_devalue_raw(values, part) for part in parts]
+    text = normalize_text("\n".join(part for part in strings if isinstance(part, str)))
+    if not text:
+        return None
+    return {"role": role, "text": text}
+
+
+def _devalue_object_get(values: list[Any], obj: Any, key: str) -> int | None:
+    if not isinstance(obj, dict):
+        return None
+    for raw_key, raw_value in obj.items():
+        if not (
+            isinstance(raw_key, str)
+            and raw_key.startswith("_")
+            and raw_key[1:].isdigit()
+        ):
+            continue
+        key_index = int(raw_key[1:])
+        if key_index < len(values) and values[key_index] == key:
+            return raw_value if isinstance(raw_value, int) else None
+    return None
+
+
+def _devalue_raw(values: list[Any], ref: Any) -> Any:
+    if not isinstance(ref, int):
+        return ref
+    if ref < 0:
+        return None
+    if ref >= len(values):
+        return None
+    return values[ref]
+
+
+def extract_gemini_share(html: str) -> tuple[str | None, list[dict[str, str]]]:
+    title = _html_title(html)
+    return title, []
+
+
+def extract_claude_share(html: str) -> tuple[str | None, list[dict[str, str]]]:
+    title, messages = extract_conversation_messages(html)
+    if messages:
+        return title, messages
+    return _html_title(html), []
+
+
+def _html_title(html: str) -> str | None:
+    soup = BeautifulSoup(html, "html.parser")
+    return soup.title.string.strip() if soup.title and soup.title.string else None
 
 
 def extract_conversation_messages(html: str) -> tuple[str | None, list[dict[str, str]]]:
@@ -184,9 +390,11 @@ def render_messages(messages: list[dict[str, str]], reader_mode: str) -> str:
         role = message["role"]
         if reader_mode == "assistant" and role != "AI":
             continue
+        text = markdown_to_speech_text(message["text"])
+        if not text:
+            continue
         if reader_mode == "all":
-            parts.append(f"{role}: {message['text']}")
+            parts.append(f"{role}: {text}")
         else:
-            parts.append(message["text"])
+            parts.append(text)
     return normalize_text("\n\n".join(parts))
-
