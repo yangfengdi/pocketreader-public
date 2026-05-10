@@ -1,65 +1,62 @@
 # PocketReader
 
-PocketReader is a personal read-it-later audio service. It imports text,
-Markdown, files, and public links, generates MP3 files with Microsoft Edge TTS,
-then lets an iPhone play, pause, resume, cache, and continue through the queue.
+PocketReader 是一个个人自用的“稍后收听”服务。它把文本、Markdown、文件、公开链接、AI 对话内容转成 MP3，并提供网页播放、离线缓存和私有 Podcast Feed，方便在 iPhone 上连续收听。
 
-The first production target is a self-hosted Web/PWA deployment at:
+当前生产地址：
 
 ```text
 https://reader.example.com
 ```
 
-## What It Does
+## 核心能力
 
-- Import plain text or Markdown from a desktop or phone.
-- Upload multiple `.txt` / `.md` files in one batch.
-- Import public URLs, including best-effort parsing for AI share links.
-- Capture logged-in ChatGPT, Gemini, and Claude pages with a Chrome extension.
-- Choose from multiple TTS voices in the web UI.
-- Generate long audio by splitting text into safe chunks, then merging MP3 files.
-- Keep item metadata: created time, generated time, first played, last played,
-  completed time, and playback position.
-- Play on iPhone with resume, skip, playback speed, and auto-next.
-- Cache an audio file from the item page for offline listening.
-- Expose a private podcast feed protected by a long random token.
+- 在电脑或手机网页里导入普通文本和 Markdown。
+- 一次上传多个 `.txt` / `.md` / `.markdown` 文件。
+- 导入公开 URL，并对部分 AI share link 做专门解析。
+- 通过 Chrome 扩展从已登录的 ChatGPT、Gemini、Claude 页面直接抓取当前对话。
+- 在网页 UI 中选择多个 TTS 声音。
+- 长文本会被切分成安全长度的小段，逐段生成 MP3，再合并成单个音频文件。
+- 保存条目的创建时间、生成时间、首次收听、最近收听、完成时间和播放进度。
+- 支持 iPhone 网页播放、暂停、继续、倍速、后退/前进 15 秒、自动进入下一条。
+- 支持在条目页缓存单个音频，便于离线收听。
+- 暴露私有 Podcast RSS Feed，使用长随机 token 保护。
 
-## Current Product Decisions
+## 当前产品决策
 
-- First version is Web/PWA, not a native iOS app.
-- Single-owner login is enough.
-- Default AI conversation mode is "AI replies only".
-- URL import is best-effort. Public pages work best; private pages that require a
-  browser login should be pasted as text or Markdown.
-- ChatGPT share links remain supported. Gemini and Claude are better handled
-  through the browser extension because their share pages may hide content from
-  server-side fetches.
-- Audio is stored on the server and is not automatically deleted yet.
+- 第一版是 Web/PWA，不做原生 iOS App。
+- 单用户自用，用户名/密码登录即可。
+- AI 对话默认只朗读 AI 回复，也可以选择“用户和 AI 都读”。
+- ChatGPT share link 保留后端解析能力。
+- Gemini / Claude 的 share 页面经常不把正文返回给服务器，更推荐使用 Chrome 扩展在浏览器里抓取已登录页面正文。
+- 服务器保存 SQLite 数据库和 MP3 文件，目前没有自动清理策略。
+- 生产服务器上还运行着 `sibling.example.com`，PocketReader 必须与它隔离部署。
 
-## Repository Layout
+## 仓库结构
 
 ```text
-pocketreader/                 FastAPI application package
-  main.py                     HTTP routes, worker lifecycle, podcast feed
-  db.py                       SQLite schema and data access
-  tts.py                      edge-tts generation, chunking, ffmpeg merge
-  importers.py                text, Markdown, URL, and AI-link extraction
-  text.py                     cleanup and split helpers
-  templates/                  server-rendered HTML
-  static/                     CSS, JS, PWA manifest, service worker
-browser-extension/            Chrome extension for in-page AI conversation capture
+pocketreader/                 FastAPI 应用包
+  main.py                     HTTP 路由、worker 生命周期、Podcast Feed
+  db.py                       SQLite schema 和数据访问
+  tts.py                      edge-tts 生成、切分、ffmpeg 合并
+  importers.py                文本、Markdown、URL、AI link、浏览器捕获内容导入
+  text.py                     文本清理和 TTS 切分工具
+  templates/                  服务端渲染 HTML
+  static/                     CSS、JS、PWA manifest、service worker
+browser-extension/            Chrome 扩展，用于 AI 页面内一键导入
 deploy/
-  pocketreader.caddy          Caddy snippet for the production domain
-  pocketreader.env.example    Environment template
+  pocketreader.caddy          生产 Caddy snippet
+  pocketreader.env.example    环境变量模板
 docs/
-  requirements.md             Product requirements and usage model
-  architecture.md             System design
-  deployment.md               Server deployment and rollback
-  operations.md               Common maintenance tasks
-tests/                        Lightweight regression tests
+  requirements.md             需求和使用场景
+  architecture.md             架构、数据流和关键机制
+  deployment.md               部署、更新和回滚
+  operations.md               日常运维、排障和 token 管理
+  browser-extension.md        Chrome 扩展安装和维护
+  ai-handoff.md               给未来 AI Agent 的交接注意事项
+tests/                        回归测试
 ```
 
-## Local Development
+## 本地开发
 
 ```bash
 python3 -m venv .venv
@@ -73,15 +70,25 @@ APP_BASE_URL=http://127.0.0.1:4780 \
 .venv/bin/uvicorn pocketreader.main:app --host 127.0.0.1 --port 4780
 ```
 
-Open:
+打开：
 
 ```text
 http://127.0.0.1:4780
 ```
 
-## Production Deployment
+常用检查：
 
-Production is isolated from the existing `other_app` / other-app app:
+```bash
+python -m unittest discover -s tests
+python -m compileall pocketreader
+node --check browser-extension/background.js
+node --check browser-extension/content-script.js
+node --check browser-extension/options.js
+```
+
+## 生产部署概要
+
+生产环境目录：
 
 ```text
 /opt/apps/pocketreader
@@ -90,34 +97,36 @@ Production is isolated from the existing `other_app` / other-app app:
 /var/log/apps/pocketreader
 ```
 
-The backend only binds to the host loopback address:
+Docker 只在宿主机 loopback 暴露后端：
 
 ```text
 127.0.0.1:4780
 ```
 
-Public HTTPS is handled by Caddy through:
+公网 HTTPS 由 Caddy 反向代理：
 
 ```text
 /etc/caddy/apps/pocketreader.caddy
 ```
 
-Full steps are in [docs/deployment.md](docs/deployment.md).
+完整部署和回滚流程见 [docs/deployment.md](docs/deployment.md)。
 
-## TTS Notes
+## TTS 实现说明
 
-The TTS implementation follows the existing `../pte_speaking` approach:
+TTS 方案沿用 `../pte_speaking` 的方向：
 
-- `edge-tts` provides speech synthesis.
-- `ffmpeg` and `ffprobe` merge and validate MP3 duration.
-- Text is split into chunks with a default 1800-character ceiling, which keeps
-  each request well below the free API's practical 10-minute MP3 limit.
+- 使用 `edge-tts` 调用 Microsoft Edge TTS。
+- 使用 `ffprobe` 检查每个 chunk 和最终 MP3 的时长。
+- 使用 `ffmpeg` 合并多个 MP3 chunk。
+- 默认 `TTS_MAX_CHARS_PER_CHUNK=1800`，显著低于免费 API 单次生成 10 分钟 MP3 的实用限制。
+- 如果生成过程中进程被重启，启动时会自动把遗留的 `processing` 条目重新排队。
 
-## Security Notes
+## 安全说明
 
-- Do not commit `/etc/apps/pocketreader/pocketreader.env`.
-- Do not reuse the server root password as the app password.
-- Podcast audio URLs use a long random feed token.
-- Browser-extension imports use a separate long random import token.
-- The provided production password can be changed by editing the env file and
-  recreating the Docker container.
+- 不要提交 `/etc/apps/pocketreader/pocketreader.env`。
+- 不要把服务器 root 密码写入仓库或文档。
+- App 登录密码、`APP_SECRET_KEY`、`FEED_TOKEN`、`IMPORT_TOKEN` 都只放在服务器 env 文件中。
+- `FEED_TOKEN` 保护 Podcast Feed 和 tokenized audio URLs。
+- `IMPORT_TOKEN` 只给 Chrome 扩展导入接口使用。
+- 更换 `FEED_TOKEN` 会让旧 feed 地址和旧音频 token URL 失效；普通重启不会失效。
+

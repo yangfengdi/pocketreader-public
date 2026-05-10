@@ -1,67 +1,78 @@
-# Requirements
+# 需求说明
 
-## User Need
+## 用户需求
 
-The user often consumes information by listening. The app should turn text,
-Markdown, AI conversations, and batches of files into audio that can be played on
-an iPhone, including while driving or reviewing drafts by ear.
+用户经常通过“听”的方式获取信息，希望把文本、Markdown、AI 对话、草稿和批量文件转成音频，在 iPhone 上连续收听。典型场景包括开车、坐车、坐飞机、以及通过“听稿”来审稿。
 
-## Primary Workflows
+目标设备优先适配：
 
-1. Desktop import, phone listening:
-   - Open the web app on a computer.
-   - Paste text or upload multiple Markdown/text files.
-   - Wait for TTS generation.
-   - Open the same app on iPhone and listen through the queue.
+```text
+iPhone 13 Pro Max
+```
 
-2. Phone link import:
-   - Copy or share a public AI conversation link.
-   - Paste it into PocketReader.
-   - Select whether to read only AI replies or the full conversation.
+## 核心使用场景
 
-3. Desktop browser capture:
-   - Open ChatGPT, Gemini, or Claude in Chrome.
-   - Click the injected "导入 PocketReader" button in the AI page.
-   - Select title, voice, and whether to read only AI replies or the full
-     conversation.
-   - Submit the visible conversation text to PocketReader without creating a
-     public share link.
+1. 电脑导入，手机收听：
+   - 在电脑上打开 PocketReader。
+   - 粘贴文本，或批量上传 `.txt` / `.md` 文件。
+   - 等待 TTS 生成。
+   - 在 iPhone 上打开网页或 Podcast App 收听。
 
-4. Draft review:
-   - Paste or upload a draft.
-   - Generate audio.
-   - Listen, pause, resume, and review progress later.
+2. 手机链接导入：
+   - 在手机上拿到公开 URL 或 AI share link。
+   - 粘贴到 PocketReader 的链接导入框。
+   - 选择“只读 AI 回复”或“用户和 AI 都读”。
 
-5. Offline preparation:
-   - Open an item page on iPhone.
-   - Tap the cache button to store that MP3 in the browser cache.
-   - Optionally subscribe to the private podcast feed in a podcast app that can
-     download episodes.
+3. 浏览器内 AI 对话导入：
+   - 在桌面 Chrome 中正常使用 ChatGPT、Gemini 或 Claude。
+   - 不需要创建 share link。
+   - 点击页面内由扩展注入的“导入 PocketReader”按钮。
+   - 检查标题、声音和朗读范围后提交。
 
-## Functional Requirements
+4. 草稿审阅：
+   - 粘贴或上传自己写的稿件。
+   - 生成音频。
+   - 通过收听发现行文、逻辑或表达问题。
 
-- Single-owner login.
-- Import text and Markdown.
-- Batch upload `.txt`, `.md`, and `.markdown`.
-- Import public URLs.
-- Best-effort parsing for ChatGPT, Gemini, and Claude share pages.
-- Chrome extension import for logged-in ChatGPT, Gemini, and Claude pages.
-- Default conversation mode: AI replies only.
-- Optional conversation mode: user and AI.
-- Voice choice in the UI.
-- Queue TTS jobs.
-- Split long text so each TTS request is under the provider limit.
-- Merge chunks into a single MP3 per item.
-- Persist item status and history.
-- Resume playback from the last position.
-- Mark completed items.
-- Auto-open the next ready item after playback ends.
-- Private podcast RSS feed.
+5. 离线准备：
+   - 在条目页点“缓存音频”，让浏览器缓存该 MP3。
+   - 或把私有 Podcast Feed 添加到支持下载的 Podcast App 中。
 
-## Non-Goals For Version 1
+## 功能需求
 
-- Native iOS app.
-- Multi-user accounts.
-- Remote-server login automation for private AI pages.
-- Automatic audio deletion policy.
-- Full-text search.
+- 单用户登录。
+- 导入普通文本和 Markdown。
+- 批量上传 `.txt`、`.md`、`.markdown`。
+- 导入公开 URL。
+- 对 ChatGPT share link 做专门解析。
+- 对 Gemini / Claude share link 做明确错误提示，避免把登录壳或 Cloudflare 页面当正文。
+- Chrome 扩展导入已登录的 ChatGPT、Gemini、Claude 页面。
+- AI 对话默认只读 AI 回复。
+- 可选朗读完整对话。
+- UI 中选择 TTS 声音。
+- TTS job 队列化处理。
+- 长文本自动切分，避免单次 TTS 生成超过 provider 限制。
+- 多 chunk 合并成单个 MP3。
+- 保存条目状态和历史。
+- 保存播放进度。
+- 播放结束后自动进入下一条 ready item。
+- 私有 Podcast RSS Feed。
+- 音频 URL 支持 `HEAD` 和 Range request，兼容 Podcast 客户端下载。
+- 服务重启后自动恢复中断的 `processing` 条目。
+
+## 非目标
+
+- 第一版不做原生 iOS App。
+- 不做多用户账号体系。
+- 不在远程服务器上登录用户的 ChatGPT/Gemini/Claude 账号。
+- 不自动删除旧音频。
+- 不做全文搜索。
+- 不做复杂权限系统；单用户加 token 已足够。
+
+## 已知限制
+
+- AI 网站 DOM 结构变化时，Chrome 扩展的 extractor 可能需要维护。
+- Gemini / Claude share link 后端抓取不稳定，主要推荐 Chrome 扩展导入。
+- Pocket Cast 可能有自己的服务端缓存，feed 修改后它不一定像 Apple Podcasts 那样立即显示所有新条目。
+- 生产服务器到 GitHub 的网络在某些时间可能超时；部署可以用本地 archive 上传，但仍应在网络恢复后补 `git push`。
+

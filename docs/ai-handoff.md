@@ -1,11 +1,19 @@
-# AI Handoff Notes
+# AI Agent 交接说明
 
-This file records the deployment agreement made during initial development so a
-future AI session does not need the original chat context.
+这份文件记录当前项目的关键上下文。未来如果换成另一个编程 Agent，即使没有原始对话记录，也应先阅读本文件和同目录下其他文档，再进行修改或部署。
 
-## Existing Server Application
+## 项目目标
 
-The same server also runs `other_app`:
+PocketReader 是一个个人自用的文本转语音收听系统。核心体验是：
+
+- 电脑上方便导入文本、文件、链接和 AI 对话。
+- 手机上方便听、暂停、继续、听下一条。
+- 通过私有 Podcast Feed 让 Podcast App 下载和播放。
+- 通过 Chrome 扩展从 ChatGPT / Gemini / Claude 当前页面导入对话。
+
+## 生产服务器现状
+
+同一台服务器上已经运行 `other_app` / other-app：
 
 ```text
 Domain: sibling.example.com
@@ -21,11 +29,11 @@ Systemd:
   other-app-trigger.service
 ```
 
-PocketReader must not modify those paths or services.
+PocketReader 不得修改这些路径或 systemd 服务。
 
-## Caddy Agreement
+## Caddy 协议
 
-Caddy has been converted to a multi-application layout:
+Caddy 已经是多应用结构：
 
 ```text
 /etc/caddy/Caddyfile
@@ -33,20 +41,20 @@ Caddy has been converted to a multi-application layout:
 /etc/caddy/apps/pocketreader.caddy
 ```
 
-PocketReader owns only:
+PocketReader 只维护：
 
 ```text
 /etc/caddy/apps/pocketreader.caddy
 ```
 
-Do not edit:
+不要修改：
 
 ```text
 /etc/caddy/Caddyfile
 /etc/caddy/apps/other-app.caddy
 ```
 
-After adding or updating the PocketReader snippet:
+修改 PocketReader snippet 后必须执行：
 
 ```bash
 caddy validate --config /etc/caddy/Caddyfile
@@ -55,7 +63,7 @@ curl -I https://sibling.example.com/
 curl -I https://reader.example.com/
 ```
 
-If PocketReader breaks Caddy validation, rollback by moving the snippet away:
+如果 Caddy validation 失败，回滚方式：
 
 ```bash
 mv /etc/caddy/apps/pocketreader.caddy \
@@ -64,54 +72,124 @@ caddy validate --config /etc/caddy/Caddyfile
 systemctl reload caddy
 ```
 
-## PocketReader Boundaries
-
-PocketReader should use:
+## PocketReader 拥有的路径
 
 ```text
 /opt/apps/pocketreader
 /var/lib/apps/pocketreader
 /etc/apps/pocketreader
 /var/log/apps/pocketreader
+/etc/caddy/apps/pocketreader.caddy
 ```
 
-Docker Compose maps the backend to:
+Docker Compose 发布端口：
 
 ```text
 127.0.0.1:4780:4780
 ```
 
-The app listens on `0.0.0.0` inside the container, but the host publishes it only
-on loopback.
+容器内部 uvicorn 监听 `0.0.0.0`，但宿主机只暴露 loopback，由 Caddy 代理公网 HTTPS。
 
-## Browser Capture Extension
+## 重要 token
 
-PocketReader includes a local Chrome extension under:
-
-```text
-browser-extension
-```
-
-It injects a capture button into ChatGPT, Gemini, and Claude pages, extracts the
-visible conversation text in the user's browser, then posts to:
-
-```text
-POST /api/browser-capture
-X-PocketReader-Import-Token: <IMPORT_TOKEN>
-```
-
-`IMPORT_TOKEN` lives in:
+生产 env 文件：
 
 ```text
 /etc/apps/pocketreader/pocketreader.env
 ```
 
-The logged-in web app also shows the extension setup values at:
+重要变量：
+
+- `APP_USERNAME` / `APP_PASSWORD`：网页登录。
+- `APP_SECRET_KEY`：签名 session cookie。
+- `FEED_TOKEN`：保护 RSS Feed 和音频 URL。
+- `IMPORT_TOKEN`：保护 Chrome 扩展导入接口。
+
+不要把真实 token 写入仓库。
+
+`FEED_TOKEN` 与 `IMPORT_TOKEN` 不要混用：
+
+- 更换 `FEED_TOKEN` 会让旧 Podcast Feed 和音频 URL 失效。
+- 更换 `IMPORT_TOKEN` 只会让旧扩展提交失效。
+- 正常重启不会改变任何 token，除非 env 文件被修改。
+
+## 已实现的重要机制
+
+- ChatGPT share link 解析：
+  - `pocketreader/importers.py`
+  - 解析 React Router stream payload。
+  - 默认只朗读 AI 回复。
+
+- Gemini / Claude 导入：
+  - share link 后端抓取不可靠。
+  - 推荐 Chrome 扩展导入当前登录页面。
+
+- Chrome 扩展：
+  - 目录：`browser-extension/`
+  - 配置页：`options.html`
+  - 提交接口：`POST /api/browser-capture`
+  - 登录后的服务器帮助页：`/extension`
+
+- TTS：
+  - `edge-tts`
+  - `ffmpeg`
+  - `ffprobe`
+  - 默认 chunk 字符上限 1800。
+
+- 中断恢复：
+  - 启动时执行 `db.requeue_interrupted_items()`。
+  - 遗留 `processing` 条目会变回 `queued`。
+  - 旧 job 标记为 `interrupted`。
+  - 新 job 继续生成。
+
+- Podcast 兼容：
+  - audio endpoint 支持 `HEAD` 和 Range GET。
+  - RSS 含 `atom:link`、`lastBuildDate`、`itunes:duration`、`guid isPermaLink=false`。
+  - 这是为了兼容 Apple Podcasts 和 Pocket Casts。
+
+## 当前生产验证过的行为
+
+最近一次部署后验证过：
+
+- `/health` 返回 `{"status":"ok"}`。
+- `https://reader.example.com/` 未登录时返回 `303 /login`。
+- `https://sibling.example.com/` 仍返回原来的 `401`。
+- 音频 `HEAD` 返回 `200`。
+- 音频 Range GET 返回 `206`。
+- item 18 曾因部署中断停在 `processing`，已被自动恢复并生成完成。
+
+## GitHub 状态注意
+
+本地开发机曾出现访问 `github.com:443` 超时，导致生产已经通过本地 archive 部署，但本地 git 可能显示：
 
 ```text
-https://reader.example.com/extension
+main...origin/main [ahead N]
 ```
 
-Do not confuse `IMPORT_TOKEN` with `FEED_TOKEN`. Rotating `IMPORT_TOKEN` only
-breaks extension submissions; rotating `FEED_TOKEN` invalidates podcast/audio
-URLs.
+未来 Agent 接手时应先运行：
+
+```bash
+git status --short --branch
+git log --oneline -8
+```
+
+如果本地仍 ahead，且网络恢复，应补：
+
+```bash
+git push origin main
+```
+
+不要因为远端落后就回退本地提交；生产可能已经运行本地 ahead 的版本。
+
+## 修改前建议阅读顺序
+
+1. `README.md`
+2. `docs/requirements.md`
+3. `docs/architecture.md`
+4. `docs/deployment.md`
+5. `docs/operations.md`
+6. `docs/browser-extension.md`
+7. 本文件
+
+改代码前运行测试；部署前确认不会触碰 other-app/other-app。
+

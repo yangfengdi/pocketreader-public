@@ -1,6 +1,6 @@
-# Operations
+# 运维说明
 
-## Useful Commands
+## 常用命令
 
 ```bash
 cd /opt/apps/pocketreader
@@ -10,54 +10,86 @@ docker compose restart
 curl -fsS http://127.0.0.1:4780/health
 ```
 
-## Change Password
+查看数据库：
 
-Edit:
+```bash
+sqlite3 /var/lib/apps/pocketreader/pocketreader.sqlite3
+```
+
+如果宿主机没有 `sqlite3`，可以用 Python：
+
+```bash
+python3 - <<'PY'
+import sqlite3
+conn = sqlite3.connect("/var/lib/apps/pocketreader/pocketreader.sqlite3")
+conn.row_factory = sqlite3.Row
+for row in conn.execute("select id,title,status,created_at,updated_at from items order by id desc limit 10"):
+    print(dict(row))
+PY
+```
+
+## 修改登录密码
+
+编辑：
 
 ```text
 /etc/apps/pocketreader/pocketreader.env
 ```
 
-Then run:
+修改：
+
+```text
+APP_PASSWORD=<new-password>
+```
+
+然后重启容器：
 
 ```bash
 cd /opt/apps/pocketreader
 docker compose up -d
 ```
 
-Existing sessions keep working until their cookie expires unless `APP_SECRET_KEY`
-is also changed.
+已有 session cookie 在过期前可能继续有效。若要强制所有会话失效，同时更换 `APP_SECRET_KEY`。
 
-## Rotate Feed Token
+## 轮换 FEED_TOKEN
 
-Edit `FEED_TOKEN` in the env file and restart the container:
+`FEED_TOKEN` 用于私有 Podcast Feed 和音频 URL：
+
+```text
+/feed/<FEED_TOKEN>.xml
+/audio/<item_id>.mp3?token=<FEED_TOKEN>
+```
+
+编辑 env 文件中的 `FEED_TOKEN` 后重启：
 
 ```bash
 cd /opt/apps/pocketreader
 docker compose up -d
 ```
 
-Old podcast/audio feed URLs stop working.
+旧 feed 地址和旧 tokenized audio URL 会失效。普通重启不会改变 feed 地址，只要 env 文件里的 `FEED_TOKEN` 没变。
 
-Normal restarts do not invalidate feed URLs. The old podcast feed and tokenized
-audio URLs remain valid as long as `FEED_TOKEN` keeps the same value.
+## 轮换 IMPORT_TOKEN
 
-## Rotate Browser Import Token
+`IMPORT_TOKEN` 只用于 Chrome 扩展导入：
 
-Edit `IMPORT_TOKEN` in the env file and restart the container:
+```text
+POST /api/browser-capture
+X-PocketReader-Import-Token: <IMPORT_TOKEN>
+```
+
+编辑 env 文件中的 `IMPORT_TOKEN` 后重启：
 
 ```bash
 cd /opt/apps/pocketreader
 docker compose up -d
 ```
 
-Update the Chrome extension options page with the new token. Old extension
-submissions stop working after the restart, but existing audio/feed URLs are not
-affected.
+然后在 Chrome 扩展设置页更新 token。更换 `IMPORT_TOKEN` 不影响 Podcast Feed。
 
-## Back Up Data
+## 备份
 
-Back up:
+至少备份：
 
 ```text
 /var/lib/apps/pocketreader/pocketreader.sqlite3
@@ -65,76 +97,180 @@ Back up:
 /etc/apps/pocketreader/pocketreader.env
 ```
 
-## Storage
+示例：
 
-Check disk usage:
+```bash
+tar -czf /root/pocketreader-backup-$(date +%Y%m%d-%H%M%S).tar.gz \
+  /var/lib/apps/pocketreader \
+  /etc/apps/pocketreader/pocketreader.env
+```
+
+## 存储
+
+查看空间：
 
 ```bash
 du -sh /var/lib/apps/pocketreader
+du -sh /var/lib/apps/pocketreader/audio
 df -h /
 ```
 
-Version 1 does not automatically delete audio. Delete items through the UI to
-remove their database row and audio folder.
+当前版本不会自动删除音频。通过 UI 删除条目会删除数据库记录和对应音频目录。
 
-## Logs
+## 日志
 
-- Application logs:
+应用日志：
 
 ```bash
 cd /opt/apps/pocketreader
 docker compose logs --tail=200
+docker compose logs -f --tail=100
 ```
 
-- Caddy access logs use the existing Caddy logging behavior. The PocketReader
-  snippet does not create its own Caddy log file because the Caddy systemd
-  sandbox on the production server rejects new log file paths.
+Caddy 日志使用服务器现有 Caddy 行为。PocketReader snippet 没有单独配置 Caddy log file，因为生产服务器的 Caddy systemd sandbox 曾拒绝新增日志文件路径。
 
-## Failed TTS Items
+## 处理中断恢复
 
-Open the item page and use `重新生成`. This keeps the same item and reruns the
-worker.
+如果部署、重启或崩溃发生在 TTS 生成中，条目可能停在 `processing`。现在应用启动时会自动执行：
 
-If the error mentions `Unable to choose an output format` for an MP3 temp file,
-check `pocketreader/tts.py`. The merge output must keep an `.mp3` suffix and the
-ffmpeg command should specify `-f mp3`. The regression test is:
+```text
+db.requeue_interrupted_items()
+```
+
+行为：
+
+- 找出所有 `items.status = 'processing'`。
+- 把旧未完成 job 标记为 `interrupted`。
+- 把 item 状态改回 `queued`。
+- 插入新的 queued job。
+- worker 自动重新生成。
+
+手动检查：
+
+```bash
+python3 - <<'PY'
+import sqlite3
+conn = sqlite3.connect("/var/lib/apps/pocketreader/pocketreader.sqlite3")
+conn.row_factory = sqlite3.Row
+for row in conn.execute("select id,title,status,updated_at from items where status in ('queued','processing') order by id"):
+    print(dict(row))
+PY
+```
+
+如果需要手动重试某个失败条目，打开条目页点击“重新生成”。
+
+## TTS 常见问题
+
+如果错误包含：
+
+```text
+Unable to choose an output format
+```
+
+检查 `pocketreader/tts.py`：
+
+- 合并临时文件必须保留 `.mp3` 后缀。
+- ffmpeg 命令应显式指定 `-f mp3`。
+
+相关测试：
 
 ```bash
 python -m unittest tests.test_tts
 ```
 
-## AI Share Link Import
+## AI Share Link 导入
 
-PocketReader has platform-specific handling for AI share links.
+PocketReader 对 AI share link 有平台专门处理。
 
-- ChatGPT share pages are parsed from the embedded React Router conversation
-  payload. The importer skips system/tool/thought/code records and keeps user
-  plus assistant text, with the default UI mode reading assistant replies only.
-- Gemini share pages may return only a sign-in shell to the backend. In that
-  case the item is created as an error with a clear message; paste the
-  conversation text manually as a fallback.
-- Claude share pages can be blocked by regional availability or Cloudflare
-  challenge pages. These are reported as explicit import errors instead of
-  silently reading the wrong page.
+- ChatGPT：
+  - 从分享页嵌入的 React Router conversation payload 中解析。
+  - 跳过 system、tool、thought、code 等记录。
+  - 保留 user 和 assistant 文本。
+  - 默认 UI 模式只朗读 assistant。
 
-## Browser Extension Import
+- Gemini：
+  - 服务器请求分享页时可能只拿到登录壳，没有正文。
+  - 这种情况会创建错误条目并给出明确错误。
+  - 推荐使用 Chrome 扩展导入当前登录页面。
 
-For logged-in AI conversations, use the Chrome extension under:
+- Claude：
+  - 服务器请求可能遇到区域限制或 Cloudflare challenge。
+  - 这种情况会明确报错。
+  - 推荐使用 Chrome 扩展导入当前登录页面。
+
+## Chrome 扩展导入
+
+扩展目录：
 
 ```text
 browser-extension
 ```
 
-The extension injects a "导入 PocketReader" button into ChatGPT, Gemini, and
-Claude pages. It extracts visible conversation text in the browser and submits
-it to `/api/browser-capture` with `IMPORT_TOKEN`. See
-`docs/browser-extension.md` for installation and maintenance details.
+登录 PocketReader 后可打开：
 
-## Regression Checks
+```text
+https://reader.example.com/extension
+```
 
-Run before deployment:
+页面会显示扩展需要填写的：
+
+```text
+PocketReader 地址
+IMPORT_TOKEN
+```
+
+修改扩展代码后：
+
+1. 打开 `chrome://extensions/`。
+2. 找到 PocketReader Capture。
+3. 点击 reload。
+4. 刷新已经打开的 ChatGPT / Gemini / Claude 页面。
+
+## Podcast 排障
+
+Feed 地址：
+
+```text
+https://reader.example.com/feed/<FEED_TOKEN>.xml
+```
+
+如果 Podcast App 能看到订阅更新但不显示新单集，检查：
+
+```bash
+TOKEN=$(grep '^FEED_TOKEN=' /etc/apps/pocketreader/pocketreader.env | cut -d= -f2-)
+curl -fsS "https://reader.example.com/feed/$TOKEN.xml" >/tmp/pocketreader-feed.xml
+curl -I "https://reader.example.com/audio/<item_id>.mp3?token=$TOKEN"
+curl -r 0-1023 -I "https://reader.example.com/audio/<item_id>.mp3?token=$TOKEN"
+```
+
+预期：
+
+```text
+feed GET: HTTP 200
+audio HEAD: HTTP 200
+audio Range: HTTP 206
+```
+
+Pocket Casts 可能使用服务端缓存。若 feed 已修复但仍不显示新条目，可以删除订阅后重新添加同一个 feed 地址。
+
+## 回归检查
+
+部署前运行：
 
 ```bash
 python -m unittest discover -s tests
 python -m compileall pocketreader
+node --check browser-extension/background.js
+node --check browser-extension/content-script.js
+node --check browser-extension/options.js
 ```
+
+截至当前文档更新，本地测试覆盖：
+
+- ChatGPT share link 解析 fixture。
+- Chrome 扩展 payload 导入。
+- `/api/browser-capture` token 鉴权。
+- 音频 `HEAD` 支持。
+- Podcast feed 兼容元数据。
+- 中断 job 恢复。
+- TTS chunk 和 ffmpeg 合并。
