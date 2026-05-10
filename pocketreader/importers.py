@@ -41,6 +41,41 @@ def import_markdown(markdown: str, title: str | None = None) -> ImportedContent:
     return ImportedContent(title=title or title_from_markdown(markdown), body=body)
 
 
+def import_messages(
+    messages: list[dict[str, Any]],
+    reader_mode: str,
+    title: str | None = None,
+) -> ImportedContent:
+    normalized_messages = normalize_messages(messages)
+    body = render_messages(normalized_messages, reader_mode)
+    return ImportedContent(title=title or title_from_markdown(body), body=body)
+
+
+def normalize_messages(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
+    normalized: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        role = normalize_message_role(message.get("role"))
+        text = normalize_text(str(message.get("text") or ""))
+        if role is None or not text:
+            continue
+        key = (role, text)
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append({"role": role, "text": text})
+    return normalized
+
+
+def normalize_message_role(value: Any) -> str | None:
+    if value is None:
+        return None
+    role = ROLE_MAP.get(str(value).strip().lower())
+    return role if role in {"AI", "User"} else None
+
+
 async def import_url(url: str, reader_mode: str) -> ImportedContent:
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"}:

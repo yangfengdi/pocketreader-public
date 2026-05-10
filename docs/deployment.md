@@ -70,6 +70,7 @@ APP_USERNAME=admin
 APP_PASSWORD=<app-password>
 APP_SECRET_KEY=<random-hex>
 FEED_TOKEN=<random-token>
+IMPORT_TOKEN=<random-token>
 APP_BASE_URL=https://reader.example.com
 ```
 
@@ -130,4 +131,3 @@ docker compose down
 ```
 
 The database and audio remain under `/var/lib/apps/pocketreader`.
-

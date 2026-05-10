@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from pocketreader.importers import extract_chatgpt_share, render_messages
+from pocketreader.importers import extract_chatgpt_share, import_messages, render_messages
 
 
 def chatgpt_fixture_html() -> str:
@@ -76,6 +76,20 @@ class ImporterTests(unittest.TestCase):
 
         self.assertEqual(render_messages(messages, "assistant"), "回答\n\n这是 AI 回复。")
         self.assertIn("User: 用户问题", render_messages(messages, "all"))
+
+    def test_import_messages_normalizes_extension_payload(self) -> None:
+        imported = import_messages(
+            [
+                {"role": "human", "text": "用户问题"},
+                {"role": "model", "text": "## 回答\n\n这是 **Gemini** 回复。"},
+                {"role": "system", "text": "ignore"},
+            ],
+            "assistant",
+            "Gemini Capture",
+        )
+
+        self.assertEqual(imported.title, "Gemini Capture")
+        self.assertEqual(imported.body, "回答\n\n这是 Gemini 回复。")
 
 
 if __name__ == "__main__":

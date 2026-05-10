@@ -84,3 +84,34 @@ Docker Compose maps the backend to:
 The app listens on `0.0.0.0` inside the container, but the host publishes it only
 on loopback.
 
+## Browser Capture Extension
+
+PocketReader includes a local Chrome extension under:
+
+```text
+browser-extension
+```
+
+It injects a capture button into ChatGPT, Gemini, and Claude pages, extracts the
+visible conversation text in the user's browser, then posts to:
+
+```text
+POST /api/browser-capture
+X-PocketReader-Import-Token: <IMPORT_TOKEN>
+```
+
+`IMPORT_TOKEN` lives in:
+
+```text
+/etc/apps/pocketreader/pocketreader.env
+```
+
+The logged-in web app also shows the extension setup values at:
+
+```text
+https://reader.example.com/extension
+```
+
+Do not confuse `IMPORT_TOKEN` with `FEED_TOKEN`. Rotating `IMPORT_TOKEN` only
+breaks extension submissions; rotating `FEED_TOKEN` invalidates podcast/audio
+URLs.

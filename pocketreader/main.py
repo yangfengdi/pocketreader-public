@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import shutil
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -29,7 +30,7 @@ from pocketreader.auth import (
 )
 from pocketreader.config import VOICE_OPTIONS, get_settings, voice_ids
 from pocketreader.db import Database, derive_title
-from pocketreader.importers import import_markdown, import_plain_text, import_url
+from pocketreader.importers import import_markdown, import_messages, import_plain_text, import_url
 from pocketreader.text import normalize_text
 from pocketreader.tts import generate_audio
 
@@ -138,6 +139,19 @@ async def index(request: Request, status_filter: str | None = None) -> HTMLRespo
             "default_voice": settings.default_voice,
             "feed_url": f"{settings.base_url}/feed/{settings.feed_token}.xml",
             "settings": settings,
+        },
+    )
+
+
+@app.get("/extension", response_class=HTMLResponse)
+async def extension_page(request: Request) -> HTMLResponse:
+    require_user(request)
+    return templates.TemplateResponse(
+        request,
+        "extension.html",
+        {
+            "settings": settings,
+            "import_token": settings.import_token,
         },
     )
 
@@ -315,6 +329,46 @@ async def record_event(request: Request, item_id: int) -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.post("/api/browser-capture")
+async def browser_capture(request: Request) -> dict[str, object]:
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Expected a JSON object.")
+    require_import_token(request, payload)
+
+    title = str(payload.get("title") or "").strip()
+    source_url = str(payload.get("url") or "").strip()
+    platform = normalize_capture_platform(payload.get("platform"))
+    voice = normalize_voice(str(payload.get("voice") or settings.default_voice))
+    reader_mode = normalize_reader_mode(str(payload.get("reader_mode") or "assistant"))
+    messages = payload.get("messages")
+    body = payload.get("body")
+
+    if isinstance(messages, list):
+        imported = import_messages(messages, reader_mode, title or None)
+    elif isinstance(body, str):
+        imported = import_markdown(body, title or None)
+    else:
+        raise HTTPException(status_code=400, detail="No captured content was provided.")
+
+    if not imported.body:
+        raise HTTPException(status_code=400, detail="Captured content is empty.")
+
+    item_id = db.create_item(
+        title=imported.title or derive_title(imported.body),
+        body=imported.body,
+        source_type=f"browser:{platform}",
+        source_url=source_url or None,
+        voice=voice,
+        reader_mode=reader_mode,
+    )
+    return {
+        "status": "ok",
+        "item_id": item_id,
+        "item_url": f"{settings.base_url}/items/{item_id}",
+    }
+
+
 @app.get("/feed/{token}.xml")
 async def podcast_feed(token: str) -> Response:
     if token != settings.feed_token:
@@ -357,6 +411,23 @@ def normalize_voice(voice: str) -> str:
 
 def normalize_reader_mode(reader_mode: str) -> str:
     return reader_mode if reader_mode in {"assistant", "all"} else "assistant"
+
+
+def normalize_capture_platform(value: object) -> str:
+    raw = str(value or "browser").strip().lower()
+    characters = [
+        character for character in raw[:60] if character.isalnum() or character in ("-", "_")
+    ]
+    return "".join(characters) or "browser"
+
+
+def require_import_token(request: Request, payload: object) -> None:
+    if not settings.import_token:
+        raise HTTPException(status_code=503, detail="IMPORT_TOKEN is not configured.")
+    body_token = payload.get("token") if isinstance(payload, dict) else None
+    candidate = request.headers.get("x-pocketreader-import-token") or str(body_token or "")
+    if not hmac.compare_digest(candidate, settings.import_token):
+        raise HTTPException(status_code=401, detail="Invalid import token.")
 
 
 def decode_upload(content: bytes) -> str:

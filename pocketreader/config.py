@@ -31,6 +31,7 @@ class Settings:
     password: str
     secret_key: str
     feed_token: str
+    import_token: str
     base_url: str
     data_dir: Path
     log_dir: Path
@@ -53,6 +54,7 @@ def get_settings() -> Settings:
         password=os.environ.get("APP_PASSWORD", "CHANGE_ME"),
         secret_key=os.environ.get("APP_SECRET_KEY", secrets.token_hex(32)),
         feed_token=os.environ.get("FEED_TOKEN", secrets.token_urlsafe(32)),
+        import_token=os.environ.get("IMPORT_TOKEN", ""),
         base_url=os.environ.get("APP_BASE_URL", "http://127.0.0.1:4780").rstrip("/"),
         data_dir=data_dir,
         log_dir=log_dir,
@@ -66,4 +68,3 @@ def get_settings() -> Settings:
 
 def voice_ids() -> set[str]:
     return {voice.id for voice in VOICE_OPTIONS}
-

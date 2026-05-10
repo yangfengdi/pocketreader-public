@@ -39,6 +39,22 @@ docker compose up -d
 
 Old podcast/audio feed URLs stop working.
 
+Normal restarts do not invalidate feed URLs. The old podcast feed and tokenized
+audio URLs remain valid as long as `FEED_TOKEN` keeps the same value.
+
+## Rotate Browser Import Token
+
+Edit `IMPORT_TOKEN` in the env file and restart the container:
+
+```bash
+cd /opt/apps/pocketreader
+docker compose up -d
+```
+
+Update the Chrome extension options page with the new token. Old extension
+submissions stop working after the restart, but existing audio/feed URLs are not
+affected.
+
 ## Back Up Data
 
 Back up:
@@ -100,6 +116,19 @@ PocketReader has platform-specific handling for AI share links.
 - Claude share pages can be blocked by regional availability or Cloudflare
   challenge pages. These are reported as explicit import errors instead of
   silently reading the wrong page.
+
+## Browser Extension Import
+
+For logged-in AI conversations, use the Chrome extension under:
+
+```text
+browser-extension
+```
+
+The extension injects a "导入 PocketReader" button into ChatGPT, Gemini, and
+Claude pages. It extracts visible conversation text in the browser and submits
+it to `/api/browser-capture` with `IMPORT_TOKEN`. See
+`docs/browser-extension.md` for installation and maintenance details.
 
 ## Regression Checks
 

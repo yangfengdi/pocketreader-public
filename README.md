@@ -15,6 +15,7 @@ https://reader.example.com
 - Import plain text or Markdown from a desktop or phone.
 - Upload multiple `.txt` / `.md` files in one batch.
 - Import public URLs, including best-effort parsing for AI share links.
+- Capture logged-in ChatGPT, Gemini, and Claude pages with a Chrome extension.
 - Choose from multiple TTS voices in the web UI.
 - Generate long audio by splitting text into safe chunks, then merging MP3 files.
 - Keep item metadata: created time, generated time, first played, last played,
@@ -30,6 +31,9 @@ https://reader.example.com
 - Default AI conversation mode is "AI replies only".
 - URL import is best-effort. Public pages work best; private pages that require a
   browser login should be pasted as text or Markdown.
+- ChatGPT share links remain supported. Gemini and Claude are better handled
+  through the browser extension because their share pages may hide content from
+  server-side fetches.
 - Audio is stored on the server and is not automatically deleted yet.
 
 ## Repository Layout
@@ -43,6 +47,7 @@ pocketreader/                 FastAPI application package
   text.py                     cleanup and split helpers
   templates/                  server-rendered HTML
   static/                     CSS, JS, PWA manifest, service worker
+browser-extension/            Chrome extension for in-page AI conversation capture
 deploy/
   pocketreader.caddy          Caddy snippet for the production domain
   pocketreader.env.example    Environment template
@@ -63,6 +68,7 @@ APP_USERNAME=admin \
 APP_PASSWORD=CHANGE_ME \
 APP_SECRET_KEY=dev-secret \
 FEED_TOKEN=dev-feed-token \
+IMPORT_TOKEN=dev-import-token \
 APP_BASE_URL=http://127.0.0.1:4780 \
 .venv/bin/uvicorn pocketreader.main:app --host 127.0.0.1 --port 4780
 ```
@@ -112,6 +118,6 @@ The TTS implementation follows the existing `../pte_speaking` approach:
 - Do not commit `/etc/apps/pocketreader/pocketreader.env`.
 - Do not reuse the server root password as the app password.
 - Podcast audio URLs use a long random feed token.
+- Browser-extension imports use a separate long random import token.
 - The provided production password can be changed by editing the env file and
   recreating the Docker container.
-

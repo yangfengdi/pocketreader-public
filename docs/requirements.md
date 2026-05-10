@@ -19,12 +19,20 @@ an iPhone, including while driving or reviewing drafts by ear.
    - Paste it into PocketReader.
    - Select whether to read only AI replies or the full conversation.
 
-3. Draft review:
+3. Desktop browser capture:
+   - Open ChatGPT, Gemini, or Claude in Chrome.
+   - Click the injected "导入 PocketReader" button in the AI page.
+   - Select title, voice, and whether to read only AI replies or the full
+     conversation.
+   - Submit the visible conversation text to PocketReader without creating a
+     public share link.
+
+4. Draft review:
    - Paste or upload a draft.
    - Generate audio.
    - Listen, pause, resume, and review progress later.
 
-4. Offline preparation:
+5. Offline preparation:
    - Open an item page on iPhone.
    - Tap the cache button to store that MP3 in the browser cache.
    - Optionally subscribe to the private podcast feed in a podcast app that can
@@ -37,6 +45,7 @@ an iPhone, including while driving or reviewing drafts by ear.
 - Batch upload `.txt`, `.md`, and `.markdown`.
 - Import public URLs.
 - Best-effort parsing for ChatGPT, Gemini, and Claude share pages.
+- Chrome extension import for logged-in ChatGPT, Gemini, and Claude pages.
 - Default conversation mode: AI replies only.
 - Optional conversation mode: user and AI.
 - Voice choice in the UI.
@@ -52,9 +61,7 @@ an iPhone, including while driving or reviewing drafts by ear.
 ## Non-Goals For Version 1
 
 - Native iOS app.
-- Browser extension.
 - Multi-user accounts.
-- Importing private AI pages that require the user's browser login session.
+- Remote-server login automation for private AI pages.
 - Automatic audio deletion policy.
 - Full-text search.
-

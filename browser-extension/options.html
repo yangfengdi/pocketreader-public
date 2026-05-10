@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <title>PocketReader Capture 设置</title>
+    <link rel="stylesheet" href="options.css">
+  </head>
+  <body>
+    <main>
+      <h1>PocketReader Capture</h1>
+      <form id="settings-form">
+        <label>
+          PocketReader 地址
+          <input id="base-url" name="baseUrl" autocomplete="off" required>
+        </label>
+        <label>
+          IMPORT_TOKEN
+          <input id="import-token" name="importToken" autocomplete="off" required>
+        </label>
+        <label>
+          默认声音
+          <select id="voice" name="voice">
+            <option value="zh-CN-XiaoxiaoNeural">中文女声 - Xiaoxiao</option>
+            <option value="zh-CN-XiaoyiNeural">中文女声 - Xiaoyi</option>
+            <option value="zh-CN-YunxiNeural">中文男声 - Yunxi</option>
+            <option value="zh-CN-YunjianNeural">中文男声 - Yunjian</option>
+            <option value="zh-TW-HsiaoChenNeural">台湾中文女声 - HsiaoChen</option>
+            <option value="en-US-EmmaMultilingualNeural">中英混合女声 - Emma</option>
+            <option value="en-US-AriaNeural">英文女声 - Aria</option>
+            <option value="en-US-GuyNeural">英文男声 - Guy</option>
+          </select>
+        </label>
+        <label>
+          默认朗读范围
+          <select id="reader-mode" name="readerMode">
+            <option value="assistant">只读 AI 回复</option>
+            <option value="all">朗读全部对话</option>
+          </select>
+        </label>
+        <button type="submit">保存设置</button>
+        <p id="status" role="status"></p>
+      </form>
+    </main>
+    <script src="options.js"></script>
+  </body>
+</html>

@@ -62,6 +62,19 @@ a {
   margin: 0;
 }
 
+.topbar-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.topbar-actions .button,
+.topbar-actions button {
+  min-height: 38px;
+  padding: 7px 11px;
+}
+
 .page {
   width: min(1120px, 100%);
   margin: 0 auto;
@@ -523,6 +536,16 @@ audio {
 .danger-form {
   display: flex;
   justify-content: flex-end;
+}
+
+.steps {
+  margin: 0;
+  padding-left: 22px;
+  line-height: 1.55;
+}
+
+.steps li + li {
+  margin-top: 4px;
 }
 
 @media (max-width: 840px) {

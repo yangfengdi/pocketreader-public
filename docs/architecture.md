@@ -22,6 +22,17 @@ Docker container: FastAPI + worker
         +-- ffmpeg / ffprobe
 ```
 
+```text
+Chrome on AI sites
+        |
+        | extension extracts visible conversation text
+        v
+POST /api/browser-capture with IMPORT_TOKEN
+        |
+        v
+normal PocketReader item queue
+```
+
 ## Runtime Components
 
 - `pocketreader.main`
@@ -47,6 +58,12 @@ Docker container: FastAPI + worker
   - Plain text and Markdown cleanup.
   - Public URL extraction with `httpx` and BeautifulSoup.
   - Best-effort JSON scanning for shared AI conversations.
+  - Normalization for browser-extension message payloads.
+
+- `browser-extension`
+  - Manifest V3 Chrome extension.
+  - Injects a capture button into ChatGPT, Gemini, and Claude.
+  - Sends extracted messages to `/api/browser-capture`.
 
 ## Database
 
@@ -83,6 +100,6 @@ The chunk directory is removed after a successful merge.
 - One configured username and password.
 - Session cookie is HMAC-signed by `APP_SECRET_KEY`.
 - Audio files require either a valid session or the private `FEED_TOKEN`.
+- Browser capture requires the separate private `IMPORT_TOKEN`.
 - Docker publishes only `127.0.0.1:4780`.
 - Caddy is the only public HTTPS entry point.
-

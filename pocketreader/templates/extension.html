@@ -1,0 +1,42 @@
+{% extends "layout.html" %}
+{% block title %}Chrome 扩展 - PocketReader{% endblock %}
+{% block content %}
+<section class="detail">
+  <a class="back-link" href="/"><span aria-hidden="true">←</span> 返回列表</a>
+
+  <div class="detail-head">
+    <div>
+      <h1>Chrome 扩展</h1>
+      <p class="subtle">在 ChatGPT、Gemini、Claude 页面里直接导入当前对话。</p>
+    </div>
+  </div>
+
+  <section class="panel stack">
+    <h2>安装</h2>
+    <ol class="steps">
+      <li>打开 Chrome 的 <strong>chrome://extensions/</strong>。</li>
+      <li>开启 Developer mode。</li>
+      <li>点击 Load unpacked，选择项目里的 <strong>browser-extension</strong> 目录。</li>
+      <li>打开扩展设置，填入下面两项。</li>
+    </ol>
+    <label>
+      <span>PocketReader 地址</span>
+      <input value="{{ settings.base_url }}" readonly>
+    </label>
+    <label>
+      <span>IMPORT_TOKEN</span>
+      <input value="{{ import_token or '未配置' }}" readonly>
+    </label>
+    <p class="hint">这个 token 只用于浏览器扩展导入，不影响私有 Podcast Feed。</p>
+  </section>
+
+  <section class="panel stack">
+    <h2>使用</h2>
+    <ol class="steps">
+      <li>正常打开 ChatGPT、Gemini 或 Claude 对话页。</li>
+      <li>点击右下角的“导入 PocketReader”。</li>
+      <li>检查标题、朗读范围和声音，然后提交。</li>
+    </ol>
+  </section>
+</section>
+{% endblock %}
