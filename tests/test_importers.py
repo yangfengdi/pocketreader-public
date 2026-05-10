@@ -1,7 +1,12 @@
 import json
 import unittest
 
-from pocketreader.importers import extract_chatgpt_share, import_messages, render_messages
+from pocketreader.importers import (
+    extract_chatgpt_share,
+    import_messages,
+    render_messages,
+    split_messages_into_turns,
+)
 
 
 def chatgpt_fixture_html() -> str:
@@ -90,6 +95,33 @@ class ImporterTests(unittest.TestCase):
 
         self.assertEqual(imported.title, "Gemini Capture")
         self.assertEqual(imported.body, "回答\n\n这是 Gemini 回复。")
+
+    def test_split_messages_into_turns_keeps_each_question_answer_pair(self) -> None:
+        turns = split_messages_into_turns(
+            [
+                {"role": "User", "text": "问题一"},
+                {"role": "AI", "text": "回答一"},
+                {"role": "AI", "text": "补充一"},
+                {"role": "User", "text": "问题二"},
+                {"role": "AI", "text": "回答二"},
+                {"role": "User", "text": "还没回答的问题"},
+            ]
+        )
+
+        self.assertEqual(
+            turns,
+            [
+                [
+                    {"role": "User", "text": "问题一"},
+                    {"role": "AI", "text": "回答一"},
+                    {"role": "AI", "text": "补充一"},
+                ],
+                [
+                    {"role": "User", "text": "问题二"},
+                    {"role": "AI", "text": "回答二"},
+                ],
+            ],
+        )
 
 
 if __name__ == "__main__":

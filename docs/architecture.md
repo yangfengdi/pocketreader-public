@@ -33,7 +33,9 @@ Chrome extension background.js
         | POST /api/browser-capture
         | X-PocketReader-Import-Token: <IMPORT_TOKEN>
         v
-PocketReader 后端创建普通 queued item
+PocketReader 后端创建一个 queued item
+        |
+        +-- 或按回合拆成多个 queued items
 ```
 
 Podcast 链路：
@@ -80,12 +82,14 @@ GET / HEAD / Range GET audio file
   - ChatGPT share page 的 React Router payload 解析。
   - Gemini / Claude share page 的错误识别。
   - Chrome 扩展消息 payload 标准化。
+  - `split_messages_into_turns()` 用于把 AI 对话拆成一问一答回合。
 
 - `browser-extension`
   - Manifest V3 Chrome extension。
   - content script 注入“导入 PocketReader”按钮。
   - 分别对 ChatGPT、Gemini、Claude 写 DOM extractor。
   - background service worker 负责提交到 PocketReader 和打开 options page。
+  - 面板提供“每个回合生成一个独立音频”checkbox。
 
 ## 数据库
 
@@ -187,4 +191,3 @@ Feed 路径：
 - Docker 只发布 `127.0.0.1:4780`。
 - Caddy 是唯一公网 HTTPS 入口。
 - 不要把生产 env 文件提交到仓库。
-

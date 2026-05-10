@@ -27,7 +27,8 @@ iPhone 13 Pro Max
    - 在桌面 Chrome 中正常使用 ChatGPT、Gemini 或 Claude。
    - 不需要创建 share link。
    - 点击页面内由扩展注入的“导入 PocketReader”按钮。
-   - 检查标题、声音和朗读范围后提交。
+   - 检查标题、声音、朗读范围和“每个回合一个独立音频”选项后提交。
+   - 如果启用按回合拆分，每一轮一问一答会生成一个独立条目，方便在 Podcast App 中逐条播放。
 
 4. 草稿审阅：
    - 粘贴或上传自己写的稿件。
@@ -47,8 +48,11 @@ iPhone 13 Pro Max
 - 对 ChatGPT share link 做专门解析。
 - 对 Gemini / Claude share link 做明确错误提示，避免把登录壳或 Cloudflare 页面当正文。
 - Chrome 扩展导入已登录的 ChatGPT、Gemini、Claude 页面。
-- AI 对话默认只读 AI 回复。
-- 可选朗读完整对话。
+- Chrome 扩展导入 AI 对话时默认朗读“问题和 AI 回复”。
+- 可选只读 AI 回复。
+- Chrome 扩展支持把 ChatGPT、Gemini、Claude 的多回合对话按“每个回合一个独立音频”拆分。
+- 拆分条目标题前缀使用 `[1/9]`、`[05/19]`、`[012/109]` 这类编号，确保播客客户端按标题或文本排序时能保持对话顺序。
+- ChatGPT share link 导入保持原有单条音频模式，不提供按回合拆分入口。
 - UI 中选择 TTS 声音。
 - TTS job 队列化处理。
 - 长文本自动切分，避免单次 TTS 生成超过 provider 限制。
@@ -75,4 +79,3 @@ iPhone 13 Pro Max
 - Gemini / Claude share link 后端抓取不稳定，主要推荐 Chrome 扩展导入。
 - Pocket Cast 可能有自己的服务端缓存，feed 修改后它不一定像 Apple Podcasts 那样立即显示所有新条目。
 - 生产服务器到 GitHub 的网络在某些时间可能超时；部署可以用本地 archive 上传，但仍应在网络恢复后补 `git push`。
-

@@ -129,6 +129,10 @@ Docker Compose 发布端口：
   - 配置页：`options.html`
   - 提交接口：`POST /api/browser-capture`
   - 登录后的服务器帮助页：`/extension`
+  - 支持 ChatGPT、Gemini、Claude 当前页面导入。
+  - 默认朗读“问题和 AI 回复”。
+  - 可选“每个回合生成一个独立音频”。
+  - 拆分标题使用 `[1/9]`、`[05/19]`、`[012/109]` 这类编号。
 
 - TTS：
   - `edge-tts`
@@ -192,4 +196,3 @@ git push origin main
 7. 本文件
 
 改代码前运行测试；部署前确认不会触碰 other-app/other-app。
-

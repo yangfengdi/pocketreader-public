@@ -1,10 +1,12 @@
 "use strict";
 
+const SETTINGS_VERSION = 2;
 const DEFAULTS = {
   baseUrl: "https://reader.example.com",
   importToken: "",
   voice: "zh-CN-XiaoxiaoNeural",
-  readerMode: "assistant"
+  readerMode: "all",
+  splitByTurn: false
 };
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -33,6 +35,10 @@ async function submitCapture(payload) {
   const settings = await chrome.storage.sync.get(DEFAULTS);
   const baseUrl = String(settings.baseUrl || DEFAULTS.baseUrl).replace(/\/+$/, "");
   const importToken = String(settings.importToken || "");
+  const readerMode =
+    Number(settings.settingsVersion || 0) < SETTINGS_VERSION
+      ? DEFAULTS.readerMode
+      : settings.readerMode || DEFAULTS.readerMode;
   if (!importToken) {
     await openOptionsPage();
     throw new Error("请在打开的扩展设置页填写 IMPORT_TOKEN，然后回到这里重新提交。");
@@ -41,7 +47,10 @@ async function submitCapture(payload) {
   const body = {
     ...payload,
     voice: payload.voice || settings.voice || DEFAULTS.voice,
-    reader_mode: payload.reader_mode || settings.readerMode || DEFAULTS.readerMode
+    reader_mode: payload.reader_mode || readerMode,
+    split_by_turn: Boolean(payload.split_by_turn ?? settings.splitByTurn ?? DEFAULTS.splitByTurn),
+    include_user_question:
+      payload.include_user_question ?? ((payload.reader_mode || readerMode) !== "assistant")
   };
 
   const response = await fetch(`${baseUrl}/api/browser-capture`, {

@@ -32,7 +32,14 @@ from pocketreader.auth import (
 )
 from pocketreader.config import VOICE_OPTIONS, get_settings, voice_ids
 from pocketreader.db import Database, derive_title
-from pocketreader.importers import import_markdown, import_messages, import_plain_text, import_url
+from pocketreader.importers import (
+    import_markdown,
+    import_messages,
+    import_plain_text,
+    import_url,
+    render_messages,
+    split_messages_into_turns,
+)
 from pocketreader.text import normalize_text
 from pocketreader.tts import generate_audio
 
@@ -362,8 +369,41 @@ async def browser_capture(request: Request) -> dict[str, object]:
     platform = normalize_capture_platform(payload.get("platform"))
     voice = normalize_voice(str(payload.get("voice") or settings.default_voice))
     reader_mode = normalize_reader_mode(str(payload.get("reader_mode") or "assistant"))
+    split_by_turn = parse_bool(payload.get("split_by_turn"), default=False)
+    include_user_question = parse_bool(payload.get("include_user_question"), default=True)
     messages = payload.get("messages")
     body = payload.get("body")
+
+    if isinstance(messages, list) and split_by_turn:
+        turns = split_messages_into_turns(messages)
+        if not turns:
+            raise HTTPException(status_code=400, detail="No AI turns were found in captured content.")
+        turn_reader_mode = "all" if include_user_question else "assistant"
+        total = len(turns)
+        created_by_index: dict[int, int] = {}
+        for index, turn in reversed(list(enumerate(turns, start=1))):
+            turn_body = render_messages(turn, turn_reader_mode)
+            if not turn_body:
+                continue
+            turn_title = numbered_title(title or derive_title(turn_body), index, total)
+            item_id = db.create_item(
+                title=turn_title,
+                body=turn_body,
+                source_type=f"browser:{platform}:turn",
+                source_url=source_url or None,
+                voice=voice,
+                reader_mode=turn_reader_mode,
+            )
+            created_by_index[index] = item_id
+        if not created_by_index:
+            raise HTTPException(status_code=400, detail="Captured content is empty.")
+        ordered_ids = [created_by_index[index] for index in sorted(created_by_index)]
+        return {
+            "status": "ok",
+            "count": len(ordered_ids),
+            "item_ids": ordered_ids,
+            "item_urls": [f"{settings.base_url}/items/{item_id}" for item_id in ordered_ids],
+        }
 
     if isinstance(messages, list):
         imported = import_messages(messages, reader_mode, title or None)
@@ -440,6 +480,21 @@ def normalize_capture_platform(value: object) -> str:
         character for character in raw[:60] if character.isalnum() or character in ("-", "_")
     ]
     return "".join(characters) or "browser"
+
+
+def parse_bool(value: object, *, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def numbered_title(title: str, index: int, total: int) -> str:
+    width = len(str(max(total, 1)))
+    return f"[{index:0{width}d}/{total:0{width}d}] {title.strip() or 'Untitled'}"
 
 
 def require_import_token(request: Request, payload: object) -> None:

@@ -107,7 +107,9 @@ Payload 示例：
   "platform": "gemini",
   "url": "https://gemini.google.com/...",
   "title": "Conversation title",
-  "reader_mode": "assistant",
+  "reader_mode": "all",
+  "split_by_turn": true,
+  "include_user_question": true,
   "voice": "zh-CN-XiaoxiaoNeural",
   "messages": [
     {"role": "User", "text": "Question"},
@@ -121,6 +123,14 @@ Payload 示例：
 - 校验 `IMPORT_TOKEN`。
 - 标准化 role：`human/user/you` -> `User`，`assistant/model/ai/claude` -> `AI`。
 - 根据 `reader_mode` 选择只保留 AI 回复或完整对话。
-- 创建普通 `queued` item。
+- `split_by_turn=false` 时，创建一个普通 `queued` item。
+- `split_by_turn=true` 时，按 User 消息开始新回合、后续 AI 消息归入同一回合的规则拆成多个 item；只生成包含 AI 回复的回合。
+- 拆分后每个标题最前面加编号，例如 `[1/9]`、`[05/19]`、`[012/109]`。
+- `include_user_question=true` 时，每个拆分条目包含提问和回答；为 `false` 时只保留 AI 回复。
 - 交给同一个 TTS worker 生成音频。
 
+## 按回合拆分
+
+浏览器扩展面板里有“每个回合生成一个独立音频”checkbox。它只影响扩展直接抓取 ChatGPT、Gemini、Claude 当前页面的导入，不影响 PocketReader 网页里通过 ChatGPT share link 粘贴导入的流程。
+
+扩展的默认朗读范围是“问题和 AI 回复”。如果用户明确选择“只读 AI 回复”，服务端会在拆分时把 `include_user_question` 当作 `false` 处理，每个音频只保留回答。

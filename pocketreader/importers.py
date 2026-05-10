@@ -28,6 +28,7 @@ ROLE_MAP = {
     "chatgpt": "AI",
     "user": "User",
     "human": "User",
+    "you": "User",
 }
 
 
@@ -51,7 +52,11 @@ def import_messages(
     return ImportedContent(title=title or title_from_markdown(body), body=body)
 
 
-def normalize_messages(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
+def normalize_messages(
+    messages: list[dict[str, Any]],
+    *,
+    dedupe: bool = True,
+) -> list[dict[str, str]]:
     normalized: list[dict[str, str]] = []
     seen: set[tuple[str, str]] = set()
     for message in messages:
@@ -62,11 +67,34 @@ def normalize_messages(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
         if role is None or not text:
             continue
         key = (role, text)
-        if key in seen:
+        if dedupe and key in seen:
             continue
         seen.add(key)
         normalized.append({"role": role, "text": text})
     return normalized
+
+
+def split_messages_into_turns(messages: list[dict[str, Any]]) -> list[list[dict[str, str]]]:
+    normalized_messages = normalize_messages(messages, dedupe=False)
+    turns: list[list[dict[str, str]]] = []
+    current_turn: list[dict[str, str]] = []
+    has_ai_message = False
+
+    for message in normalized_messages:
+        if message["role"] == "User":
+            if has_ai_message:
+                turns.append(current_turn)
+                current_turn = []
+                has_ai_message = False
+            current_turn.append(message)
+            continue
+
+        current_turn.append(message)
+        has_ai_message = True
+
+    if current_turn and has_ai_message:
+        turns.append(current_turn)
+    return turns
 
 
 def normalize_message_role(value: Any) -> str | None:

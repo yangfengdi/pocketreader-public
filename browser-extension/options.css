@@ -36,6 +36,12 @@ label {
   color: #59667a;
 }
 
+.checkbox-label {
+  grid-template-columns: 18px 1fr;
+  align-items: center;
+  color: #172033;
+}
+
 input,
 select {
   min-height: 42px;
@@ -45,6 +51,14 @@ select {
   font: inherit;
   color: #172033;
   background: #ffffff;
+}
+
+.checkbox-label input {
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  margin: 0;
+  padding: 0;
 }
 
 button {

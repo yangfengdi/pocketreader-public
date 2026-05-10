@@ -5,9 +5,11 @@
     return;
   }
 
+  const SETTINGS_VERSION = 2;
   const DEFAULTS = {
     voice: "zh-CN-XiaoxiaoNeural",
-    readerMode: "assistant"
+    readerMode: "all",
+    splitByTurn: false
   };
 
   const VOICES = [
@@ -37,9 +39,13 @@
         <label>
           朗读范围
           <select data-pocketreader-reader-mode>
+            <option value="all">问题和 AI 回复</option>
             <option value="assistant">只读 AI 回复</option>
-            <option value="all">朗读全部对话</option>
           </select>
+        </label>
+        <label class="pocketreader-checkbox">
+          <input type="checkbox" data-pocketreader-split-turns>
+          <span>每个回合生成一个独立音频</span>
         </label>
         <label>
           声音
@@ -61,6 +67,7 @@
   const optionsButton = root.querySelector(".pocketreader-secondary");
   const titleInput = root.querySelector("[data-pocketreader-title]");
   const readerModeSelect = root.querySelector("[data-pocketreader-reader-mode]");
+  const splitTurnsInput = root.querySelector("[data-pocketreader-split-turns]");
   const voiceSelect = root.querySelector("[data-pocketreader-voice]");
   const statusNode = root.querySelector(".pocketreader-status");
 
@@ -73,7 +80,11 @@
 
   chrome.storage.sync.get(DEFAULTS).then((settings) => {
     voiceSelect.value = settings.voice || DEFAULTS.voice;
-    readerModeSelect.value = settings.readerMode || DEFAULTS.readerMode;
+    readerModeSelect.value =
+      Number(settings.settingsVersion || 0) < SETTINGS_VERSION
+        ? DEFAULTS.readerMode
+        : settings.readerMode || DEFAULTS.readerMode;
+    splitTurnsInput.checked = Boolean(settings.splitByTurn || DEFAULTS.splitByTurn);
   });
 
   openButton.addEventListener("click", () => {
@@ -100,6 +111,8 @@
     capture.title = titleInput.value.trim() || capture.title;
     capture.voice = voiceSelect.value;
     capture.reader_mode = readerModeSelect.value;
+    capture.split_by_turn = splitTurnsInput.checked;
+    capture.include_user_question = readerModeSelect.value !== "assistant";
 
     if (!capture.messages.length) {
       showStatus("没有识别到可导入的对话文本。", "error");
@@ -117,7 +130,13 @@
       if (!response || !response.ok) {
         throw new Error(response && response.error ? response.error : "提交失败");
       }
-      showStatus(`已创建条目 #${response.result.item_id}`, "ok");
+      const result = response.result || {};
+      if (Array.isArray(result.item_ids) && result.item_ids.length > 1) {
+        showStatus(`已创建 ${result.item_ids.length} 个条目`, "ok");
+      } else {
+        const itemId = result.item_id || (Array.isArray(result.item_ids) ? result.item_ids[0] : "");
+        showStatus(`已创建条目 #${itemId}`, "ok");
+      }
     } catch (error) {
       showStatus(error.message || String(error), "error");
     } finally {

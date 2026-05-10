@@ -79,6 +79,15 @@
   color: #59667a;
 }
 
+.pocketreader-panel label.pocketreader-checkbox {
+  grid-template-columns: 18px 1fr;
+  align-items: center;
+  gap: 8px;
+  color: #172033;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
 .pocketreader-panel input,
 .pocketreader-panel select {
   width: 100%;
@@ -89,6 +98,14 @@
   color: #172033;
   background: #ffffff;
   font-size: 14px;
+}
+
+.pocketreader-panel label.pocketreader-checkbox input {
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  padding: 0;
+  margin: 0;
 }
 
 .pocketreader-submit {

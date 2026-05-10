@@ -219,6 +219,13 @@ PocketReader 地址
 IMPORT_TOKEN
 ```
 
+扩展面板可选择：
+
+- 朗读范围：默认“问题和 AI 回复”，也可改成“只读 AI 回复”。
+- 是否“每个回合生成一个独立音频”。
+
+按回合拆分只适用于扩展直接抓取 ChatGPT / Gemini / Claude 当前页面。通过 PocketReader 网页粘贴 ChatGPT share link 的导入流程保持单条音频模式。
+
 修改扩展代码后：
 
 1. 打开 `chrome://extensions/`。

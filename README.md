@@ -14,6 +14,7 @@ https://reader.example.com
 - 一次上传多个 `.txt` / `.md` / `.markdown` 文件。
 - 导入公开 URL，并对部分 AI share link 做专门解析。
 - 通过 Chrome 扩展从已登录的 ChatGPT、Gemini、Claude 页面直接抓取当前对话。
+- Chrome 扩展可把 AI 多回合对话拆成“每个回合一个独立音频”，并在标题前加 `[1/9]` 这类顺序编号。
 - 在网页 UI 中选择多个 TTS 声音。
 - 长文本会被切分成安全长度的小段，逐段生成 MP3，再合并成单个音频文件。
 - 保存条目的创建时间、生成时间、首次收听、最近收听、完成时间和播放进度。
@@ -25,7 +26,8 @@ https://reader.example.com
 
 - 第一版是 Web/PWA，不做原生 iOS App。
 - 单用户自用，用户名/密码登录即可。
-- AI 对话默认只朗读 AI 回复，也可以选择“用户和 AI 都读”。
+- Chrome 扩展导入 AI 对话时默认朗读“问题和 AI 回复”，也可以选择只读 AI 回复。
+- ChatGPT share link 保持单条音频导入模式。
 - ChatGPT share link 保留后端解析能力。
 - Gemini / Claude 的 share 页面经常不把正文返回给服务器，更推荐使用 Chrome 扩展在浏览器里抓取已登录页面正文。
 - 服务器保存 SQLite 数据库和 MP3 文件，目前没有自动清理策略。
@@ -129,4 +131,3 @@ TTS 方案沿用 `../pte_speaking` 的方向：
 - `FEED_TOKEN` 保护 Podcast Feed 和 tokenized audio URLs。
 - `IMPORT_TOKEN` 只给 Chrome 扩展导入接口使用。
 - 更换 `FEED_TOKEN` 会让旧 feed 地址和旧音频 token URL 失效；普通重启不会失效。
-

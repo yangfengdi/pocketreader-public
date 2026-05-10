@@ -55,6 +55,73 @@ class BrowserCaptureApiTests(unittest.TestCase):
         self.assertEqual(item["body"], "回答")
         self.assertEqual(item["status"], "queued")
 
+    def test_browser_capture_can_split_ai_conversation_into_turn_items(self) -> None:
+        client = TestClient(main.app)
+
+        response = client.post(
+            "/api/browser-capture",
+            headers={"X-PocketReader-Import-Token": "import-token"},
+            json={
+                "platform": "claude",
+                "url": "https://claude.ai/chat/test",
+                "title": "Split Test",
+                "reader_mode": "assistant",
+                "split_by_turn": True,
+                "include_user_question": True,
+                "voice": "zh-CN-XiaoxiaoNeural",
+                "messages": [
+                    {"role": "User", "text": "问题一"},
+                    {"role": "AI", "text": "回答一"},
+                    {"role": "User", "text": "问题二"},
+                    {"role": "AI", "text": "回答二"},
+                ],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["count"], 2)
+        self.assertEqual(len(data["item_ids"]), 2)
+
+        first = main.db.get_item(data["item_ids"][0])
+        second = main.db.get_item(data["item_ids"][1])
+        self.assertIsNotNone(first)
+        self.assertIsNotNone(second)
+        assert first is not None
+        assert second is not None
+        self.assertEqual(first["title"], "[1/2] Split Test")
+        self.assertEqual(second["title"], "[2/2] Split Test")
+        self.assertEqual(first["body"], "User: 问题一\n\nAI: 回答一")
+        self.assertEqual(second["body"], "User: 问题二\n\nAI: 回答二")
+        self.assertEqual(first["source_type"], "browser:claude:turn")
+        self.assertEqual(second["reader_mode"], "all")
+
+    def test_browser_capture_split_can_exclude_user_questions(self) -> None:
+        client = TestClient(main.app)
+
+        response = client.post(
+            "/api/browser-capture",
+            headers={"X-PocketReader-Import-Token": "import-token"},
+            json={
+                "platform": "chatgpt",
+                "title": "Answer Only",
+                "split_by_turn": True,
+                "include_user_question": False,
+                "messages": [
+                    {"role": "User", "text": "问题"},
+                    {"role": "AI", "text": "回答"},
+                ],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        item = main.db.get_item(response.json()["item_ids"][0])
+        self.assertIsNotNone(item)
+        assert item is not None
+        self.assertEqual(item["title"], "[1/1] Answer Only")
+        self.assertEqual(item["body"], "回答")
+        self.assertEqual(item["reader_mode"], "assistant")
+
     def test_browser_capture_rejects_bad_token(self) -> None:
         client = TestClient(main.app)
 

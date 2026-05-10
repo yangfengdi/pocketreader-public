@@ -33,9 +33,13 @@
         <label>
           默认朗读范围
           <select id="reader-mode" name="readerMode">
+            <option value="all">问题和 AI 回复</option>
             <option value="assistant">只读 AI 回复</option>
-            <option value="all">朗读全部对话</option>
           </select>
+        </label>
+        <label class="checkbox-label">
+          <input id="split-by-turn" name="splitByTurn" type="checkbox">
+          <span>默认每个回合生成一个独立音频</span>
         </label>
         <button type="submit">保存设置</button>
         <p id="status" role="status"></p>
