@@ -4,8 +4,10 @@ import asyncio
 import hmac
 import shutil
 import xml.etree.ElementTree as ET
+from datetime import UTC, datetime
+from email.utils import format_datetime as format_rfc2822_datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import (
     FastAPI,
@@ -305,6 +307,25 @@ async def delete_item(request: Request, item_id: int) -> RedirectResponse:
 
 @app.get("/audio/{item_id}.mp3")
 async def audio_file(request: Request, item_id: int, token: str | None = None) -> FileResponse:
+    item, audio_path = ready_audio_file(request, item_id, token)
+    filename = safe_audio_filename(item["title"])
+    return FileResponse(audio_path, media_type="audio/mpeg", filename=filename)
+
+
+@app.head("/audio/{item_id}.mp3")
+async def audio_file_head(request: Request, item_id: int, token: str | None = None) -> Response:
+    _, audio_path = ready_audio_file(request, item_id, token)
+    return Response(
+        status_code=200,
+        media_type="audio/mpeg",
+        headers={
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(audio_path.stat().st_size),
+        },
+    )
+
+
+def ready_audio_file(request: Request, item_id: int, token: str | None) -> tuple[Any, Path]:
     if token != settings.feed_token and current_user(request) is None:
         raise HTTPException(status_code=404)
     item = db.get_item(item_id)
@@ -313,8 +334,7 @@ async def audio_file(request: Request, item_id: int, token: str | None = None) -
     audio_path = settings.data_dir / item["audio_path"]
     if not audio_path.is_file():
         raise HTTPException(status_code=404)
-    filename = safe_audio_filename(item["title"])
-    return FileResponse(audio_path, media_type="audio/mpeg", filename=filename)
+    return item, audio_path
 
 
 @app.post("/api/items/{item_id}/event")
@@ -461,7 +481,7 @@ def build_podcast_feed() -> str:
         ET.SubElement(episode, "title").text = item["title"]
         ET.SubElement(episode, "description").text = (item["body"] or "")[:500]
         ET.SubElement(episode, "guid").text = f"pocketreader-{item['id']}"
-        ET.SubElement(episode, "pubDate").text = item["created_at"]
+        ET.SubElement(episode, "pubDate").text = format_rss_datetime(item["created_at"])
         audio_url = f"{settings.base_url}/audio/{item['id']}.mp3?token={settings.feed_token}"
         enclosure = ET.SubElement(episode, "enclosure")
         enclosure.set("url", audio_url)
@@ -469,6 +489,16 @@ def build_podcast_feed() -> str:
         audio_path = settings.data_dir / item["audio_path"]
         enclosure.set("length", str(audio_path.stat().st_size if audio_path.exists() else 0))
     return ET.tostring(rss, encoding="utf-8", xml_declaration=True).decode("utf-8")
+
+
+def format_rss_datetime(value: object) -> str:
+    try:
+        date_value = datetime.fromisoformat(str(value))
+    except ValueError:
+        date_value = datetime.now(UTC)
+    if date_value.tzinfo is None:
+        date_value = date_value.replace(tzinfo=UTC)
+    return format_rfc2822_datetime(date_value)
 
 
 def format_duration(value: object) -> str:

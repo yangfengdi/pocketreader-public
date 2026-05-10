@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+from pathlib import Path
 
 
 _tmp = tempfile.TemporaryDirectory()
@@ -75,6 +76,31 @@ class BrowserCaptureApiTests(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
+
+    def test_audio_head_supports_podcast_enclosure_checks(self) -> None:
+        client = TestClient(main.app)
+        item_id = main.db.create_item(
+            title="Podcast Audio",
+            body="audio body",
+            source_type="text",
+            voice="zh-CN-XiaoxiaoNeural",
+            reader_mode="assistant",
+        )
+        audio_path = Path(os.environ["APP_DATA_DIR"]) / "audio" / str(item_id) / "audio.mp3"
+        audio_path.parent.mkdir(parents=True, exist_ok=True)
+        audio_path.write_bytes(b"fake mp3 bytes")
+        main.db.mark_ready(
+            item_id,
+            audio_path.relative_to(Path(os.environ["APP_DATA_DIR"])).as_posix(),
+            1.0,
+        )
+
+        response = client.head(f"/audio/{item_id}.mp3?token=feed-token")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["content-type"], "audio/mpeg")
+        self.assertEqual(response.headers["content-length"], str(len(b"fake mp3 bytes")))
+        self.assertEqual(response.headers["accept-ranges"], "bytes")
 
 
 if __name__ == "__main__":
