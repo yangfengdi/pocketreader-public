@@ -105,6 +105,7 @@ var POCKETREADER_BINARY_DOCUMENT_EXTENSIONS = new Set(["docx"]);
   const splitTurnsInput = root.querySelector("[data-pocketreader-split-turns]");
   const voiceSelect = root.querySelector("[data-pocketreader-voice]");
   const statusNode = root.querySelector(".pocketreader-status");
+  let latestCapture = null;
 
   for (const [value, label] of VOICES) {
     const option = document.createElement("option");
@@ -126,14 +127,16 @@ var POCKETREADER_BINARY_DOCUMENT_EXTENSIONS = new Set(["docx"]);
       showStatus(extensionErrorMessage(error), "error");
     });
 
-  openButton.addEventListener("click", () => {
+  openButton.addEventListener("click", async () => {
     panel.classList.toggle("open");
     if (panel.classList.contains("open")) {
-      const capture = captureConversation();
+      showStatus("正在识别当前页面", "");
+      const capture = await captureConversationWithFiles();
+      latestCapture = capture;
       titleInput.value = capture.title;
       showStatus(
-        recognitionMessage(capture.messages.length, capture.file_count),
-        capture.messages.length || capture.file_count ? "" : "error"
+        recognitionMessage(capture.messages.length, capture.files.length),
+        capture.messages.length || capture.files.length ? "" : "error"
       );
     }
   });
@@ -149,7 +152,7 @@ var POCKETREADER_BINARY_DOCUMENT_EXTENSIONS = new Set(["docx"]);
   });
 
   submitButton.addEventListener("click", async () => {
-    const capture = await captureConversationWithFiles();
+    const capture = latestCapture || (await captureConversationWithFiles());
     capture.title = titleInput.value.trim() || capture.title;
     capture.voice = voiceSelect.value;
     capture.reader_mode = readerModeSelect.value;
@@ -234,20 +237,19 @@ var POCKETREADER_BINARY_DOCUMENT_EXTENSIONS = new Set(["docx"]);
 function captureConversation() {
   const platform = platformFromHost(location.hostname);
   const messages = cleanMessages(extractMessages(platform));
-  const fileCount = collectGeneratedFileCandidates(platform).length;
   return {
     platform,
     url: location.href,
     title: titleFromPage(platform, messages),
     messages,
     files: [],
-    file_count: fileCount
+    file_count: 0
   };
 }
 
 async function captureConversationWithFiles() {
   const capture = captureConversation();
-  capture.files = await extractGeneratedFiles(capture.platform);
+  capture.files = await extractGeneratedFiles(capture.platform, capture.messages);
   capture.file_count = capture.files.length;
   return capture;
 }
@@ -365,8 +367,8 @@ function textFromNode(node) {
   return cleanText(clone.innerText || clone.textContent || "");
 }
 
-async function extractGeneratedFiles(platform) {
-  const candidates = collectGeneratedFileCandidates(platform);
+async function extractGeneratedFiles(platform, messages = []) {
+  const candidates = collectGeneratedFileCandidates(platform, messages);
   const files = [];
   const seen = new Set();
   for (const candidate of candidates) {
@@ -384,7 +386,7 @@ async function extractGeneratedFiles(platform) {
   return files;
 }
 
-function collectGeneratedFileCandidates(platform) {
+function collectGeneratedFileCandidates(platform, messages = []) {
   const candidates = [];
   const scopes = fileSearchScopes(platform);
   for (const scope of scopes) {
@@ -393,7 +395,8 @@ function collectGeneratedFileCandidates(platform) {
     }
   }
   if (platform === "claude") {
-    addClaudeArtifactCandidates(candidates);
+    addClaudeArtifactCandidates(candidates, messages);
+    addVisibleSidePanelCandidates(candidates, messages);
   }
   return candidates;
 }
@@ -498,7 +501,7 @@ async function readGeneratedFile(candidate) {
   return null;
 }
 
-function addClaudeArtifactCandidates(candidates) {
+function addClaudeArtifactCandidates(candidates, messages = []) {
   const nodes = Array.from(
     document.querySelectorAll(
       [
@@ -516,7 +519,7 @@ function addClaudeArtifactCandidates(candidates) {
 
   for (const node of nodes) {
     const body = artifactBodyFromNode(node);
-    if (!body) {
+    if (!body || overlapsKnownMessages(body, messages)) {
       continue;
     }
     const title = artifactTitleFromNode(node, body);
@@ -537,6 +540,87 @@ function addClaudeArtifactCandidates(candidates) {
       inline_body: body
     });
   }
+}
+
+function addVisibleSidePanelCandidates(candidates, messages = []) {
+  const nodes = Array.from(
+    document.querySelectorAll(
+      [
+        "main",
+        "article",
+        "section",
+        "[role='main']",
+        "[role='dialog']",
+        "[role='tabpanel']",
+        "[data-testid]",
+        "[class]"
+      ].join(",")
+    )
+  )
+    .filter(isVisible)
+    .filter(isLikelySidePanelNode)
+    .sort(compareNodeDepth);
+
+  for (const node of nodes) {
+    if (node.closest("#pocketreader-capture-root")) {
+      continue;
+    }
+    if (isInsideConversationMessage(node)) {
+      continue;
+    }
+    const body = artifactBodyFromNode(node);
+    if (!body || overlapsKnownMessages(body, messages)) {
+      continue;
+    }
+    const title = artifactTitleFromNode(node, body);
+    const filename = `${safeFilename(title || "claude-artifact")}.md`;
+    const key = `claude-side-panel\n${title}\n${body.slice(0, 500)}`;
+    if (candidates.some((candidate) => candidate.key === key)) {
+      continue;
+    }
+    if (candidates.some((candidate) => candidate.inline_body && sameBody(candidate.inline_body, body))) {
+      continue;
+    }
+    candidates.push({
+      key,
+      node,
+      title: title || filename,
+      filename,
+      url: "",
+      inline_body: body
+    });
+  }
+}
+
+function isLikelySidePanelNode(node) {
+  const rect = node.getBoundingClientRect();
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+  if (!viewportWidth || rect.width < 220 || rect.height < 120) {
+    return false;
+  }
+  if (rect.left < viewportWidth * 0.28 && rect.right < viewportWidth * 0.72) {
+    return false;
+  }
+  if (rect.width > viewportWidth * 0.82 && rect.height > viewportHeight * 0.82) {
+    return false;
+  }
+  const text = stripArtifactUiLines(textFromArtifactNode(node));
+  return looksLikeArtifactBody(text);
+}
+
+function isInsideConversationMessage(node) {
+  return Boolean(
+    node.closest(
+      [
+        "[data-message-author-role]",
+        "[data-testid*='user-message']",
+        "[data-testid*='assistant-message']",
+        ".font-user-message",
+        ".font-claude-message"
+      ].join(",")
+    )
+  );
 }
 
 function artifactBodyFromNode(node) {
@@ -696,6 +780,23 @@ function sameBody(a, b) {
   const left = cleanText(a).slice(0, 1000);
   const right = cleanText(b).slice(0, 1000);
   return left === right || left.includes(right) || right.includes(left);
+}
+
+function overlapsKnownMessages(body, messages = []) {
+  const candidate = cleanText(body);
+  if (!candidate) {
+    return false;
+  }
+  for (const message of messages) {
+    const text = cleanText(message.text || "");
+    if (!text || text.length < 40) {
+      continue;
+    }
+    if (sameBody(candidate, text)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function inlineFileText(node, filename) {
