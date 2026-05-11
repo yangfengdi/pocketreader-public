@@ -15,6 +15,7 @@ https://reader.example.com
 - 导入公开 URL，并对部分 AI share link 做专门解析。
 - 通过 Chrome 扩展从已登录的 ChatGPT、Gemini、Claude 页面直接抓取当前对话。
 - Chrome 扩展可把 AI 多回合对话拆成“每个回合一个独立音频”，并在标题前加 `[1/9]` 这类顺序编号。
+- Chrome 扩展会把对话中可读取的 AI 生成文本文件单独导入为音频条目，标题使用 `[文件]` 或 `[文件 1/2]` 前缀。
 - 在网页 UI 中选择多个 TTS 声音。
 - 长文本会被切分成安全长度的小段，逐段生成 MP3，再合并成单个音频文件。
 - 保存条目的创建时间、生成时间、首次收听、最近收听、完成时间和播放进度。
@@ -30,6 +31,7 @@ https://reader.example.com
 - ChatGPT share link 保持单条音频导入模式。
 - ChatGPT share link 保留后端解析能力。
 - Gemini / Claude 的 share 页面经常不把正文返回给服务器，更推荐使用 Chrome 扩展在浏览器里抓取已登录页面正文。
+- 扩展 reload 后必须刷新已经打开的 AI 页面；否则页面里残留的旧 content script 可能显示 `Extension context invalidated`。
 - 服务器保存 SQLite 数据库和 MP3 文件，目前没有自动清理策略。
 - 生产服务器上还运行着 `sibling.example.com`，PocketReader 必须与它隔离部署。
 

@@ -52,6 +52,8 @@ iPhone 13 Pro Max
 - 可选只读 AI 回复。
 - Chrome 扩展支持把 ChatGPT、Gemini、Claude 的多回合对话按“每个回合一个独立音频”拆分。
 - 拆分条目标题前缀使用 `[1/9]`、`[05/19]`、`[012/109]` 这类编号，确保播客客户端按标题或文本排序时能保持对话顺序。
+- Chrome 扩展会把 AI 对话中可读取的 AI 生成文件单独创建为音频条目；文本类文件直接读取，`.docx` 文件由后端解析正文。
+- 文件条目标题前缀使用 `[文件]` 或 `[文件 1/2]`。
 - ChatGPT share link 导入保持原有单条音频模式，不提供按回合拆分入口。
 - UI 中选择 TTS 声音。
 - TTS job 队列化处理。
@@ -76,6 +78,7 @@ iPhone 13 Pro Max
 ## 已知限制
 
 - AI 网站 DOM 结构变化时，Chrome 扩展的 extractor 可能需要维护。
+- 扩展 reload 后，已经打开的 AI 页面必须刷新；否则旧 content script 会失去 runtime 上下文并显示 `Extension context invalidated`。
 - Gemini / Claude share link 后端抓取不稳定，主要推荐 Chrome 扩展导入。
 - Pocket Cast 可能有自己的服务端缓存，feed 修改后它不一定像 Apple Podcasts 那样立即显示所有新条目。
 - 生产服务器到 GitHub 的网络在某些时间可能超时；部署可以用本地 archive 上传，但仍应在网络恢复后补 `git push`。

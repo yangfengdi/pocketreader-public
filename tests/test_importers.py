@@ -1,8 +1,12 @@
+import base64
+import io
 import json
 import unittest
+import zipfile
 
 from pocketreader.importers import (
     extract_chatgpt_share,
+    import_captured_file,
     import_messages,
     render_messages,
     split_messages_into_turns,
@@ -122,6 +126,41 @@ class ImporterTests(unittest.TestCase):
                 ],
             ],
         )
+
+    def test_import_captured_file_reads_text_payload(self) -> None:
+        imported = import_captured_file(
+            {
+                "filename": "notes.md",
+                "body": "# 标题\n\n这是 **文件** 内容。",
+            }
+        )
+
+        self.assertEqual(imported.title, "notes.md")
+        self.assertEqual(imported.body, "标题\n\n这是 文件 内容。")
+
+    def test_import_captured_file_extracts_docx_payload(self) -> None:
+        document_xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+            "<w:body>"
+            "<w:p><w:r><w:t>第一段</w:t></w:r></w:p>"
+            "<w:p><w:r><w:t>第二段</w:t></w:r></w:p>"
+            "</w:body>"
+            "</w:document>"
+        )
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("word/document.xml", document_xml)
+
+        imported = import_captured_file(
+            {
+                "filename": "draft.docx",
+                "data_base64": base64.b64encode(buffer.getvalue()).decode("ascii"),
+            }
+        )
+
+        self.assertEqual(imported.title, "draft.docx")
+        self.assertEqual(imported.body, "第一段\n\n第二段")
 
 
 if __name__ == "__main__":

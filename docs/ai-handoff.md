@@ -133,6 +133,8 @@ Docker Compose 发布端口：
   - 默认朗读“问题和 AI 回复”。
   - 可选“每个回合生成一个独立音频”。
   - 拆分标题使用 `[1/9]`、`[05/19]`、`[012/109]` 这类编号。
+  - 可读取的 AI 生成文件会被单独导入，标题前缀为 `[文件]` 或 `[文件 1/2]`。
+  - 扩展 reload 后必须刷新已打开的 AI 页面，否则旧 content script 会报 `Extension context invalidated`。
 
 - TTS：
   - `edge-tts`

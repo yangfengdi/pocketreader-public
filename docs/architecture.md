@@ -83,11 +83,13 @@ GET / HEAD / Range GET audio file
   - Gemini / Claude share page 的错误识别。
   - Chrome 扩展消息 payload 标准化。
   - `split_messages_into_turns()` 用于把 AI 对话拆成一问一答回合。
+  - `import_captured_file()` 用于把扩展抓到的 AI 生成文件转成可朗读正文，当前支持文本类文件和 `.docx`。
 
 - `browser-extension`
   - Manifest V3 Chrome extension。
   - content script 注入“导入 PocketReader”按钮。
   - 分别对 ChatGPT、Gemini、Claude 写 DOM extractor。
+  - 在 AI 回复区域内寻找可读取的文件链接或文件卡片。
   - background service worker 负责提交到 PocketReader 和打开 options page。
   - 面板提供“每个回合生成一个独立音频”checkbox。
 

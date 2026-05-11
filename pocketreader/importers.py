@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import base64
+import binascii
+import io
 import json
 import re
+import zipfile
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
+from xml.etree import ElementTree as XmlElementTree
 
 import httpx
 from bs4 import BeautifulSoup
@@ -50,6 +55,70 @@ def import_messages(
     normalized_messages = normalize_messages(messages)
     body = render_messages(normalized_messages, reader_mode)
     return ImportedContent(title=title or title_from_markdown(body), body=body)
+
+
+def import_captured_file(file_payload: dict[str, Any]) -> ImportedContent:
+    title = str(
+        file_payload.get("title") or file_payload.get("filename") or "AI 生成文件"
+    ).strip()
+    filename = str(file_payload.get("filename") or title).strip()
+    text = str(file_payload.get("body") or file_payload.get("text") or "")
+
+    if not text and str(file_payload.get("data_base64") or ""):
+        raw = decode_base64_file(str(file_payload.get("data_base64") or ""))
+        text = text_from_binary_file(raw, filename)
+
+    if filename.lower().endswith((".md", ".markdown")):
+        return import_markdown(text, title)
+    return import_plain_text(text, title)
+
+
+def decode_base64_file(data: str) -> bytes:
+    if "," in data and data.strip().lower().startswith("data:"):
+        data = data.split(",", 1)[1]
+    try:
+        return base64.b64decode(data, validate=True)
+    except binascii.Error:
+        return b""
+
+
+def text_from_binary_file(data: bytes, filename: str) -> str:
+    if not data:
+        return ""
+    if filename.lower().endswith(".docx"):
+        return extract_docx_text(data)
+    for encoding in ("utf-8", "utf-8-sig", "gb18030"):
+        try:
+            return data.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return data.decode("utf-8", errors="replace")
+
+
+def extract_docx_text(data: bytes) -> str:
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            document_xml = archive.read("word/document.xml")
+    except (KeyError, zipfile.BadZipFile):
+        return ""
+
+    try:
+        root = XmlElementTree.fromstring(document_xml)
+    except XmlElementTree.ParseError:
+        return ""
+
+    namespace = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    paragraphs: list[str] = []
+    for paragraph in root.iter(f"{namespace}p"):
+        parts = [
+            text_node.text or ""
+            for text_node in paragraph.iter(f"{namespace}t")
+            if text_node.text
+        ]
+        paragraph_text = "".join(parts).strip()
+        if paragraph_text:
+            paragraphs.append(paragraph_text)
+    return "\n\n".join(paragraphs)
 
 
 def normalize_messages(

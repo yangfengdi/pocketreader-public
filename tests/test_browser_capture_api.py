@@ -122,6 +122,72 @@ class BrowserCaptureApiTests(unittest.TestCase):
         self.assertEqual(item["body"], "回答")
         self.assertEqual(item["reader_mode"], "assistant")
 
+    def test_browser_capture_creates_separate_items_for_generated_files(self) -> None:
+        client = TestClient(main.app)
+
+        response = client.post(
+            "/api/browser-capture",
+            headers={"X-PocketReader-Import-Token": "import-token"},
+            json={
+                "platform": "chatgpt",
+                "url": "https://chatgpt.com/c/test",
+                "title": "Conversation With Files",
+                "reader_mode": "all",
+                "messages": [
+                    {"role": "User", "text": "写一个文件"},
+                    {"role": "AI", "text": "文件已生成"},
+                ],
+                "files": [
+                    {"filename": "outline.md", "body": "# 大纲\n\n第一节"},
+                    {"filename": "notes.txt", "body": "补充说明"},
+                ],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["count"], 3)
+        conversation = main.db.get_item(data["item_ids"][0])
+        first_file = main.db.get_item(data["item_ids"][1])
+        second_file = main.db.get_item(data["item_ids"][2])
+        self.assertIsNotNone(conversation)
+        self.assertIsNotNone(first_file)
+        self.assertIsNotNone(second_file)
+        assert conversation is not None
+        assert first_file is not None
+        assert second_file is not None
+        self.assertEqual(conversation["source_type"], "browser:chatgpt")
+        self.assertEqual(conversation["body"], "User: 写一个文件\n\nAI: 文件已生成")
+        self.assertEqual(first_file["title"], "[文件 1/2] outline.md")
+        self.assertEqual(first_file["body"], "大纲\n\n第一节")
+        self.assertEqual(first_file["source_type"], "browser:chatgpt:file")
+        self.assertEqual(first_file["source_filename"], "outline.md")
+        self.assertEqual(second_file["title"], "[文件 2/2] notes.txt")
+
+    def test_browser_capture_accepts_file_only_payload(self) -> None:
+        client = TestClient(main.app)
+
+        response = client.post(
+            "/api/browser-capture",
+            headers={"X-PocketReader-Import-Token": "import-token"},
+            json={
+                "platform": "claude",
+                "files": [
+                    {"filename": "artifact.txt", "body": "独立文件内容"},
+                ],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["count"], 1)
+        item = main.db.get_item(data["item_id"])
+        self.assertIsNotNone(item)
+        assert item is not None
+        self.assertEqual(item["title"], "[文件] artifact.txt")
+        self.assertEqual(item["body"], "独立文件内容")
+        self.assertEqual(item["source_type"], "browser:claude:file")
+
     def test_browser_capture_rejects_bad_token(self) -> None:
         client = TestClient(main.app)
 

@@ -57,6 +57,7 @@ https://reader.example.com/extension
 - 朗读范围。
 - 选择的声音。
 - 提取出的 user / AI messages。
+- AI 生成文件的文件名、文本内容，或小型 `.docx` 文件的 base64 数据。
 
 扩展不会把 AI 账号 cookie 发给 PocketReader。
 
@@ -68,6 +69,14 @@ https://reader.example.com/extension
 2. 找到 PocketReader Capture。
 3. 点击 reload。
 4. 刷新已打开的 ChatGPT / Gemini / Claude 页面。
+
+如果没有刷新页面，旧 content script 会继续留在页面里，但它已经无法调用新的扩展 runtime。此时 Chrome console 可能出现：
+
+```text
+Extension context invalidated.
+```
+
+扩展会尽量显示“请刷新当前 AI 页面后再导入”的提示，但根本处理方式仍然是刷新当前 AI 页面。
 
 如果“扩展设置”按钮无响应，重点检查：
 
@@ -114,6 +123,10 @@ Payload 示例：
   "messages": [
     {"role": "User", "text": "Question"},
     {"role": "AI", "text": "Answer"}
+  ],
+  "files": [
+    {"filename": "outline.md", "body": "# Outline\n\nText"},
+    {"filename": "draft.docx", "data_base64": "..."}
   ]
 }
 ```
@@ -127,6 +140,8 @@ Payload 示例：
 - `split_by_turn=true` 时，按 User 消息开始新回合、后续 AI 消息归入同一回合的规则拆成多个 item；只生成包含 AI 回复的回合。
 - 拆分后每个标题最前面加编号，例如 `[1/9]`、`[05/19]`、`[012/109]`。
 - `include_user_question=true` 时，每个拆分条目包含提问和回答；为 `false` 时只保留 AI 回复。
+- 如果 payload 中有 `files`，服务端会为每个可读取文件创建独立 item。
+- 文件标题使用 `[文件]` 或 `[文件 1/2]` 前缀，`source_type` 为 `browser:<platform>:file`。
 - 交给同一个 TTS worker 生成音频。
 
 ## 按回合拆分
@@ -134,3 +149,12 @@ Payload 示例：
 浏览器扩展面板里有“每个回合生成一个独立音频”checkbox。它只影响扩展直接抓取 ChatGPT、Gemini、Claude 当前页面的导入，不影响 PocketReader 网页里通过 ChatGPT share link 粘贴导入的流程。
 
 扩展的默认朗读范围是“问题和 AI 回复”。如果用户明确选择“只读 AI 回复”，服务端会在拆分时把 `include_user_question` 当作 `false` 处理，每个音频只保留回答。
+
+## AI 生成文件
+
+扩展会在 ChatGPT、Gemini、Claude 的 AI 回复区域里寻找文件链接或文件卡片。当前自动读取：
+
+- 文本类文件：`.txt`、`.md`、`.csv`、`.json`、`.html`、`.py`、`.js`、`.ts`、`.css`、`.sql` 等。
+- 小型 `.docx` 文件：扩展下载后发给服务端，服务端用标准 docx XML 解析正文。
+
+如果 AI 网站只暴露不可下载的内部 `sandbox:` 链接，或文件是 PDF/图片/表格这类当前无法抽取正文的格式，扩展会跳过该文件。后续要支持这类文件，应在 `browser-extension/content-script.js` 的文件提取逻辑和 `pocketreader/importers.py` 的文件解析逻辑里扩展。

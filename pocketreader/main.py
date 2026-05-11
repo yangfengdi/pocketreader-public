@@ -33,6 +33,7 @@ from pocketreader.auth import (
 from pocketreader.config import VOICE_OPTIONS, get_settings, voice_ids
 from pocketreader.db import Database, derive_title
 from pocketreader.importers import (
+    import_captured_file,
     import_markdown,
     import_messages,
     import_plain_text,
@@ -373,10 +374,17 @@ async def browser_capture(request: Request) -> dict[str, object]:
     include_user_question = parse_bool(payload.get("include_user_question"), default=True)
     messages = payload.get("messages")
     body = payload.get("body")
+    captured_file_ids = create_captured_file_items(
+        payload.get("files"),
+        platform=platform,
+        source_url=source_url,
+        voice=voice,
+        reader_mode=reader_mode,
+    )
 
     if isinstance(messages, list) and split_by_turn:
         turns = split_messages_into_turns(messages)
-        if not turns:
+        if not turns and not captured_file_ids:
             raise HTTPException(status_code=400, detail="No AI turns were found in captured content.")
         turn_reader_mode = "all" if include_user_question else "assistant"
         total = len(turns)
@@ -395,39 +403,84 @@ async def browser_capture(request: Request) -> dict[str, object]:
                 reader_mode=turn_reader_mode,
             )
             created_by_index[index] = item_id
-        if not created_by_index:
+        if not created_by_index and not captured_file_ids:
             raise HTTPException(status_code=400, detail="Captured content is empty.")
         ordered_ids = [created_by_index[index] for index in sorted(created_by_index)]
-        return {
-            "status": "ok",
-            "count": len(ordered_ids),
-            "item_ids": ordered_ids,
-            "item_urls": [f"{settings.base_url}/items/{item_id}" for item_id in ordered_ids],
-        }
+        return browser_capture_response(ordered_ids + captured_file_ids)
 
-    if isinstance(messages, list):
+    if isinstance(messages, list) and messages:
         imported = import_messages(messages, reader_mode, title or None)
-    elif isinstance(body, str):
+    elif isinstance(body, str) and body.strip():
         imported = import_markdown(body, title or None)
+    elif captured_file_ids:
+        return browser_capture_response(captured_file_ids)
     else:
         raise HTTPException(status_code=400, detail="No captured content was provided.")
 
-    if not imported.body:
+    if not imported.body and not captured_file_ids:
         raise HTTPException(status_code=400, detail="Captured content is empty.")
 
-    item_id = db.create_item(
-        title=imported.title or derive_title(imported.body),
-        body=imported.body,
-        source_type=f"browser:{platform}",
-        source_url=source_url or None,
-        voice=voice,
-        reader_mode=reader_mode,
-    )
-    return {
+    item_ids = []
+    if imported.body:
+        item_id = db.create_item(
+            title=imported.title or derive_title(imported.body),
+            body=imported.body,
+            source_type=f"browser:{platform}",
+            source_url=source_url or None,
+            voice=voice,
+            reader_mode=reader_mode,
+        )
+        item_ids.append(item_id)
+    item_ids.extend(captured_file_ids)
+    return browser_capture_response(item_ids)
+
+
+def create_captured_file_items(
+    raw_files: object,
+    *,
+    platform: str,
+    source_url: str,
+    voice: str,
+    reader_mode: str,
+) -> list[int]:
+    if not isinstance(raw_files, list):
+        return []
+    imported_files: list[tuple[dict[str, Any], Any]] = []
+    for raw_file in raw_files:
+        if not isinstance(raw_file, dict):
+            continue
+        imported = import_captured_file(raw_file)
+        if imported.body:
+            imported_files.append((raw_file, imported))
+    created_by_index: dict[int, int] = {}
+    total = len(imported_files)
+    for index, (raw_file, imported) in reversed(list(enumerate(imported_files, start=1))):
+        filename = str(raw_file.get("filename") or imported.title or "").strip() or None
+        file_url = str(raw_file.get("url") or "").strip() or source_url or None
+        item_id = db.create_item(
+            title=captured_file_title(imported.title or derive_title(imported.body), index, total),
+            body=imported.body,
+            source_type=f"browser:{platform}:file",
+            source_url=file_url,
+            source_filename=filename,
+            voice=voice,
+            reader_mode=reader_mode,
+        )
+        created_by_index[index] = item_id
+    return [created_by_index[index] for index in sorted(created_by_index)]
+
+
+def browser_capture_response(item_ids: list[int]) -> dict[str, object]:
+    response: dict[str, object] = {
         "status": "ok",
-        "item_id": item_id,
-        "item_url": f"{settings.base_url}/items/{item_id}",
+        "count": len(item_ids),
+        "item_ids": item_ids,
+        "item_urls": [f"{settings.base_url}/items/{item_id}" for item_id in item_ids],
     }
+    if len(item_ids) == 1:
+        response["item_id"] = item_ids[0]
+        response["item_url"] = f"{settings.base_url}/items/{item_ids[0]}"
+    return response
 
 
 @app.get("/feed/{token}.xml")
@@ -495,6 +548,14 @@ def parse_bool(value: object, *, default: bool) -> bool:
 def numbered_title(title: str, index: int, total: int) -> str:
     width = len(str(max(total, 1)))
     return f"[{index:0{width}d}/{total:0{width}d}] {title.strip() or 'Untitled'}"
+
+
+def captured_file_title(title: str, index: int, total: int) -> str:
+    clean_title = title.strip() or "AI 生成文件"
+    if total <= 1:
+        return f"[文件] {clean_title}"
+    width = len(str(max(total, 1)))
+    return f"[文件 {index:0{width}d}/{total:0{width}d}] {clean_title}"
 
 
 def require_import_token(request: Request, payload: object) -> None:
