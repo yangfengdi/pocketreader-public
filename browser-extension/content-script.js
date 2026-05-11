@@ -1,5 +1,40 @@
 "use strict";
 
+const POCKETREADER_MAX_FILE_TEXT_CHARS = 300000;
+const POCKETREADER_MAX_BINARY_FILE_BYTES = 4 * 1024 * 1024;
+const POCKETREADER_TEXT_FILE_EXTENSIONS = new Set([
+  "txt",
+  "md",
+  "markdown",
+  "csv",
+  "tsv",
+  "json",
+  "jsonl",
+  "yaml",
+  "yml",
+  "xml",
+  "html",
+  "htm",
+  "rtf",
+  "log",
+  "py",
+  "js",
+  "ts",
+  "tsx",
+  "jsx",
+  "css",
+  "scss",
+  "sql",
+  "sh",
+  "bash",
+  "zsh",
+  "toml",
+  "ini",
+  "conf",
+  "tex"
+]);
+const POCKETREADER_BINARY_DOCUMENT_EXTENSIONS = new Set(["docx"]);
+
 (function initPocketReaderCapture() {
   if (document.querySelector("#pocketreader-capture-root")) {
     return;
@@ -11,40 +46,6 @@
     readerMode: "all",
     splitByTurn: false
   };
-  const MAX_FILE_TEXT_CHARS = 300000;
-  const MAX_BINARY_FILE_BYTES = 4 * 1024 * 1024;
-  const TEXT_FILE_EXTENSIONS = new Set([
-    "txt",
-    "md",
-    "markdown",
-    "csv",
-    "tsv",
-    "json",
-    "jsonl",
-    "yaml",
-    "yml",
-    "xml",
-    "html",
-    "htm",
-    "rtf",
-    "log",
-    "py",
-    "js",
-    "ts",
-    "tsx",
-    "jsx",
-    "css",
-    "scss",
-    "sql",
-    "sh",
-    "bash",
-    "zsh",
-    "toml",
-    "ini",
-    "conf",
-    "tex"
-  ]);
-  const BINARY_DOCUMENT_EXTENSIONS = new Set(["docx"]);
 
   const VOICES = [
     ["zh-CN-XiaoxiaoNeural", "中文女声 - Xiaoxiao"],
@@ -457,7 +458,7 @@ async function readGeneratedFile(candidate) {
     const blob = await response.blob();
     const contentType = response.headers.get("content-type") || blob.type || "";
     if (isLikelyTextFile(candidate.filename) || isTextContentType(contentType)) {
-      const text = cleanText(await blob.text()).slice(0, MAX_FILE_TEXT_CHARS);
+      const text = cleanText(await blob.text()).slice(0, POCKETREADER_MAX_FILE_TEXT_CHARS);
       return text
         ? {
             title: candidate.title,
@@ -468,7 +469,10 @@ async function readGeneratedFile(candidate) {
           }
         : null;
     }
-    if (isSupportedBinaryDocument(candidate.filename) && blob.size <= MAX_BINARY_FILE_BYTES) {
+    if (
+      isSupportedBinaryDocument(candidate.filename) &&
+      blob.size <= POCKETREADER_MAX_BINARY_FILE_BYTES
+    ) {
       return {
         title: candidate.title,
         filename: candidate.filename,
@@ -494,7 +498,7 @@ function inlineFileText(node, filename) {
   if (!text || text === filename || text.length < 3) {
     return "";
   }
-  return text.slice(0, MAX_FILE_TEXT_CHARS);
+  return text.slice(0, POCKETREADER_MAX_FILE_TEXT_CHARS);
 }
 
 function fileNameFromNode(node) {
@@ -572,12 +576,12 @@ function fileNameFromUrl(url) {
 
 function isLikelyTextFile(filename) {
   const extension = fileExtension(filename);
-  return TEXT_FILE_EXTENSIONS.has(extension);
+  return POCKETREADER_TEXT_FILE_EXTENSIONS.has(extension);
 }
 
 function isSupportedBinaryDocument(filename) {
   const extension = fileExtension(filename);
-  return BINARY_DOCUMENT_EXTENSIONS.has(extension);
+  return POCKETREADER_BINARY_DOCUMENT_EXTENSIONS.has(extension);
 }
 
 function fileExtension(filename) {
