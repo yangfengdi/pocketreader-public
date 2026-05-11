@@ -1,8 +1,8 @@
 "use strict";
 
-const POCKETREADER_MAX_FILE_TEXT_CHARS = 300000;
-const POCKETREADER_MAX_BINARY_FILE_BYTES = 4 * 1024 * 1024;
-const POCKETREADER_TEXT_FILE_EXTENSIONS = new Set([
+var POCKETREADER_MAX_FILE_TEXT_CHARS = 300000;
+var POCKETREADER_MAX_BINARY_FILE_BYTES = 4 * 1024 * 1024;
+var POCKETREADER_TEXT_FILE_EXTENSIONS = new Set([
   "txt",
   "md",
   "markdown",
@@ -33,7 +33,7 @@ const POCKETREADER_TEXT_FILE_EXTENSIONS = new Set([
   "conf",
   "tex"
 ]);
-const POCKETREADER_BINARY_DOCUMENT_EXTENSIONS = new Set(["docx"]);
+var POCKETREADER_BINARY_DOCUMENT_EXTENSIONS = new Set(["docx"]);
 
 (function initPocketReaderCapture() {
   if (document.querySelector("#pocketreader-capture-root")) {
@@ -392,6 +392,9 @@ function collectGeneratedFileCandidates(platform) {
       addFileCandidate(candidates, node);
     }
   }
+  if (platform === "claude") {
+    addClaudeArtifactCandidates(candidates);
+  }
   return candidates;
 }
 
@@ -438,6 +441,14 @@ function addFileCandidate(candidates, node) {
 }
 
 async function readGeneratedFile(candidate) {
+  if (candidate.inline_body) {
+    return {
+      title: candidate.title,
+      filename: candidate.filename,
+      body: candidate.inline_body,
+      url: candidate.url || null
+    };
+  }
   const inlineText = inlineFileText(candidate.node, candidate.filename);
   if (inlineText) {
     return {
@@ -485,6 +496,206 @@ async function readGeneratedFile(candidate) {
     return null;
   }
   return null;
+}
+
+function addClaudeArtifactCandidates(candidates) {
+  const nodes = Array.from(
+    document.querySelectorAll(
+      [
+        "[data-testid*='artifact' i]",
+        "[aria-label*='artifact' i]",
+        "[title*='artifact' i]",
+        "[class*='artifact' i]",
+        "[data-testid*='canvas' i]",
+        "[class*='canvas' i]"
+      ].join(",")
+    )
+  )
+    .filter(isVisible)
+    .sort(compareNodeDepth);
+
+  for (const node of nodes) {
+    const body = artifactBodyFromNode(node);
+    if (!body) {
+      continue;
+    }
+    const title = artifactTitleFromNode(node, body);
+    const filename = `${safeFilename(title || "claude-artifact")}.md`;
+    const key = `claude-artifact\n${title}\n${body.slice(0, 500)}`;
+    if (candidates.some((candidate) => candidate.key === key)) {
+      continue;
+    }
+    if (candidates.some((candidate) => candidate.inline_body && sameBody(candidate.inline_body, body))) {
+      continue;
+    }
+    candidates.push({
+      key,
+      node,
+      title: title || filename,
+      filename,
+      url: "",
+      inline_body: body
+    });
+  }
+}
+
+function artifactBodyFromNode(node) {
+  const preferred = artifactContentNode(node);
+  const rawText = preferred ? textFromArtifactNode(preferred) : textFromArtifactNode(node);
+  const text = stripArtifactUiLines(rawText);
+  if (!looksLikeArtifactBody(text)) {
+    return "";
+  }
+  return text.slice(0, POCKETREADER_MAX_FILE_TEXT_CHARS);
+}
+
+function artifactContentNode(node) {
+  return (
+    node.querySelector("[data-testid*='artifact-content' i]") ||
+    node.querySelector("[data-testid*='artifact_content' i]") ||
+    node.querySelector("[class*='artifact-content' i]") ||
+    node.querySelector("[class*='artifact_content' i]") ||
+    node.querySelector(".cm-content") ||
+    node.querySelector(".ProseMirror") ||
+    node.querySelector("[contenteditable='true']") ||
+    node.querySelector("article") ||
+    node.querySelector("main") ||
+    node.querySelector("pre") ||
+    node.querySelector("code") ||
+    node.querySelector("textarea") ||
+    null
+  );
+}
+
+function textFromArtifactNode(node) {
+  const iframeText = textFromSameOriginIframes(node);
+  if (iframeText) {
+    return iframeText;
+  }
+  const clone = node.cloneNode(true);
+  for (const removable of clone.querySelectorAll(
+    [
+      "button",
+      "svg",
+      "style",
+      "script",
+      "textarea",
+      "input",
+      "select",
+      "nav",
+      "menu",
+      "[aria-hidden='true']",
+      "[hidden]",
+      "[role='toolbar']",
+      "[role='tablist']",
+      "[data-testid*='toolbar' i]",
+      "[class*='toolbar' i]"
+    ].join(",")
+  )) {
+    removable.remove();
+  }
+  return cleanText(clone.innerText || clone.textContent || "");
+}
+
+function textFromSameOriginIframes(node) {
+  const parts = [];
+  for (const iframe of node.querySelectorAll("iframe")) {
+    try {
+      const body = iframe.contentDocument && iframe.contentDocument.body;
+      if (body) {
+        const text = textFromNode(body);
+        if (text) {
+          parts.push(text);
+        }
+      }
+    } catch (_error) {
+      continue;
+    }
+  }
+  return cleanText(parts.join("\n\n"));
+}
+
+function stripArtifactUiLines(text) {
+  const uiLinePattern =
+    /^(artifact|preview|code|copy|download|publish|close|open|复制|下载|预览|代码|发布|关闭|打开|复制内容|复制代码)$/i;
+  return cleanText(
+    String(text || "")
+      .split("\n")
+      .filter((line) => !uiLinePattern.test(line.trim()))
+      .join("\n")
+  );
+}
+
+function looksLikeArtifactBody(text) {
+  const value = cleanText(text);
+  if (value.length < 40) {
+    return false;
+  }
+  const lines = value.split("\n").filter(Boolean);
+  return lines.length >= 2 || /[。.!?？]\s/.test(value) || value.length >= 120;
+}
+
+function artifactTitleFromNode(node, body) {
+  const candidates = [
+    textFromFirst(node, "h1, h2, h3"),
+    textFromFirst(node, "[data-testid*='title' i]"),
+    node.getAttribute("title"),
+    node.getAttribute("aria-label"),
+    body.split("\n").find((line) => line.trim().length >= 2 && line.trim().length <= 90),
+    cleanTitle(document.title || "")
+  ];
+  for (const candidate of candidates) {
+    const title = cleanArtifactTitle(candidate);
+    if (title) {
+      return title;
+    }
+  }
+  return "Claude Artifact";
+}
+
+function textFromFirst(node, selector) {
+  const found = node.querySelector(selector);
+  return found ? cleanText(found.textContent || "") : "";
+}
+
+function cleanArtifactTitle(title) {
+  const value = cleanText(title)
+    .replace(/\b(artifact|preview|code)\b/gi, "")
+    .replace(/^(复制|下载|预览|代码)\s*/g, "")
+    .trim();
+  if (!value || value.length > 120 || /^(artifact|preview|code)$/i.test(value)) {
+    return "";
+  }
+  return value;
+}
+
+function safeFilename(name) {
+  const cleaned = String(name || "")
+    .replace(/[\\/:*?"<>|]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 90);
+  return cleaned || "claude-artifact";
+}
+
+function compareNodeDepth(a, b) {
+  return nodeDepth(b) - nodeDepth(a);
+}
+
+function nodeDepth(node) {
+  let depth = 0;
+  let current = node;
+  while (current && current.parentElement) {
+    depth += 1;
+    current = current.parentElement;
+  }
+  return depth;
+}
+
+function sameBody(a, b) {
+  const left = cleanText(a).slice(0, 1000);
+  const right = cleanText(b).slice(0, 1000);
+  return left === right || left.includes(right) || right.includes(left);
 }
 
 function inlineFileText(node, filename) {

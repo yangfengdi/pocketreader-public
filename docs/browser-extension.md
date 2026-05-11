@@ -152,9 +152,10 @@ Payload 示例：
 
 ## AI 生成文件
 
-扩展会在 ChatGPT、Gemini、Claude 的 AI 回复区域里寻找文件链接或文件卡片。当前自动读取：
+扩展会在 ChatGPT、Gemini、Claude 的 AI 回复区域里寻找文件链接、文件卡片或 Claude Artifact。当前自动读取：
 
 - 文本类文件：`.txt`、`.md`、`.csv`、`.json`、`.html`、`.py`、`.js`、`.ts`、`.css`、`.sql` 等。
 - 小型 `.docx` 文件：扩展下载后发给服务端，服务端用标准 docx XML 解析正文。
+- Claude Artifact：如果正文已经在当前页面 DOM 中，扩展会把它当作 Markdown 文本文件提交。
 
-如果 AI 网站只暴露不可下载的内部 `sandbox:` 链接，或文件是 PDF/图片/表格这类当前无法抽取正文的格式，扩展会跳过该文件。后续要支持这类文件，应在 `browser-extension/content-script.js` 的文件提取逻辑和 `pocketreader/importers.py` 的文件解析逻辑里扩展。
+如果 AI 网站只暴露不可下载的内部 `sandbox:` 链接、Artifact 没有展开到当前页面 DOM 中，或文件是 PDF/图片/表格这类当前无法抽取正文的格式，扩展会跳过该文件。遇到 Claude Artifact 时，建议先点开 Artifact，让正文出现在页面右侧面板，再点“导入 PocketReader”。后续要支持更多格式，应在 `browser-extension/content-script.js` 的文件提取逻辑和 `pocketreader/importers.py` 的文件解析逻辑里扩展。
