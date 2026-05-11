@@ -304,12 +304,17 @@ function extractGeminiMessages() {
 }
 
 function extractClaudeMessages() {
+  const structuredMessages = collectCandidates([
+    ["User", "[data-testid='user-message'], [data-testid*='user-message']"],
+    ["AI", "[data-testid='assistant-message'], [data-testid*='assistant-message']"]
+  ]);
+  if (structuredMessages.length) {
+    return structuredMessages;
+  }
+
   return collectCandidates([
-    ["User", "[data-testid='user-message'], [data-testid*='user-message'], .font-user-message"],
-    [
-      "AI",
-      "[data-testid='assistant-message'], [data-testid*='assistant-message'], .font-claude-message, [data-is-streaming], .markdown.prose"
-    ]
+    ["User", ".font-user-message"],
+    ["AI", ".font-claude-message"]
   ]);
 }
 
@@ -525,13 +530,7 @@ function addClaudeArtifactCandidates(candidates, messages = []) {
     const title = artifactTitleFromNode(node, body);
     const filename = `${safeFilename(title || "claude-artifact")}.md`;
     const key = `claude-artifact\n${title}\n${body.slice(0, 500)}`;
-    if (candidates.some((candidate) => candidate.key === key)) {
-      continue;
-    }
-    if (candidates.some((candidate) => candidate.inline_body && sameBody(candidate.inline_body, body))) {
-      continue;
-    }
-    candidates.push({
+    addInlineFileCandidate(candidates, {
       key,
       node,
       title: title || filename,
@@ -561,6 +560,7 @@ function addVisibleSidePanelCandidates(candidates, messages = []) {
     .filter(isLikelySidePanelNode)
     .sort(compareNodeDepth);
 
+  const panelCandidates = [];
   for (const node of nodes) {
     if (node.closest("#pocketreader-capture-root")) {
       continue;
@@ -575,13 +575,7 @@ function addVisibleSidePanelCandidates(candidates, messages = []) {
     const title = artifactTitleFromNode(node, body);
     const filename = `${safeFilename(title || "claude-artifact")}.md`;
     const key = `claude-side-panel\n${title}\n${body.slice(0, 500)}`;
-    if (candidates.some((candidate) => candidate.key === key)) {
-      continue;
-    }
-    if (candidates.some((candidate) => candidate.inline_body && sameBody(candidate.inline_body, body))) {
-      continue;
-    }
-    candidates.push({
+    addInlineFileCandidate(panelCandidates, {
       key,
       node,
       title: title || filename,
@@ -590,6 +584,31 @@ function addVisibleSidePanelCandidates(candidates, messages = []) {
       inline_body: body
     });
   }
+  const bestCandidate = panelCandidates.sort(
+    (left, right) => right.inline_body.length - left.inline_body.length
+  )[0];
+  if (bestCandidate) {
+    addInlineFileCandidate(candidates, bestCandidate);
+  }
+}
+
+function addInlineFileCandidate(candidates, candidate) {
+  if (!candidate.inline_body) {
+    return;
+  }
+  if (candidates.some((existing) => existing.key === candidate.key)) {
+    return;
+  }
+  const overlapIndex = candidates.findIndex(
+    (existing) => existing.inline_body && textContainsEither(existing.inline_body, candidate.inline_body)
+  );
+  if (overlapIndex >= 0) {
+    if (candidate.inline_body.length > candidates[overlapIndex].inline_body.length) {
+      candidates[overlapIndex] = candidate;
+    }
+    return;
+  }
+  candidates.push(candidate);
 }
 
 function isLikelySidePanelNode(node) {
@@ -782,6 +801,27 @@ function sameBody(a, b) {
   return left === right || left.includes(right) || right.includes(left);
 }
 
+function textContainsEither(left, right) {
+  const normalizedLeft = canonicalComparableText(left);
+  const normalizedRight = canonicalComparableText(right);
+  if (!normalizedLeft || !normalizedRight) {
+    return false;
+  }
+  if (normalizedLeft === normalizedRight) {
+    return true;
+  }
+  const shorter = normalizedLeft.length < normalizedRight.length ? normalizedLeft : normalizedRight;
+  const longer = normalizedLeft.length < normalizedRight.length ? normalizedRight : normalizedLeft;
+  if (shorter.length < 80) {
+    return false;
+  }
+  return longer.includes(shorter);
+}
+
+function canonicalComparableText(text) {
+  return cleanText(text).replace(/\s+/g, " ").trim();
+}
+
 function overlapsKnownMessages(body, messages = []) {
   const candidate = cleanText(body);
   if (!candidate) {
@@ -930,18 +970,23 @@ function blobToBase64(blob) {
 
 function cleanMessages(messages) {
   const cleaned = [];
-  const seen = new Set();
   for (const message of messages) {
     const role = normalizeRole(message.role);
     const text = cleanText(message.text).replace(/^(ChatGPT|Gemini|Claude|You|User|Assistant)\s*\n/i, "");
     if (!role || text.length < 2 || isMostlyUiText(text)) {
       continue;
     }
-    const key = `${role}\n${text}`;
-    if (seen.has(key)) {
+
+    const duplicateIndex = cleaned.findIndex(
+      (existing) => existing.role === role && textContainsEither(existing.text, text)
+    );
+    if (duplicateIndex >= 0) {
+      if (text.length > cleaned[duplicateIndex].text.length) {
+        cleaned[duplicateIndex] = { role, text };
+      }
       continue;
     }
-    seen.add(key);
+
     cleaned.push({ role, text });
   }
   return cleaned;
