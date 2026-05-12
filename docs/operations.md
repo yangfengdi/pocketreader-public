@@ -226,7 +226,7 @@ IMPORT_TOKEN
 
 按回合拆分只适用于扩展直接抓取 ChatGPT / Gemini / Claude 当前页面。通过 PocketReader 网页粘贴 ChatGPT share link 的导入流程保持单条音频模式。
 
-如果 AI 回复里包含可读取的 AI 生成文件，扩展会把每个文件单独提交给后端，后端为每个文件创建独立音频条目。当前主要支持文本类文件、`.docx` 和已在当前页面展开的 Claude Artifact。Claude Artifact 如果没有被展开到页面右侧面板，扩展可能无法读取正文。
+如果 AI 回复里包含可读取的 AI 生成文件，扩展会把每个文件单独提交给后端，后端为每个文件创建独立音频条目。当前主要支持文本类文件、`.docx` 和带明确 DOM 标记的 Claude Artifact。不要用“右侧大块文本”兜底猜测文件；如果 Claude 没有暴露明确 Artifact DOM，应优先增加手动导入入口。
 
 修改扩展代码后：
 
@@ -280,12 +280,14 @@ python -m compileall pocketreader
 node --check browser-extension/background.js
 node --check browser-extension/content-script.js
 node --check browser-extension/options.js
+node tests/browser_extension_capture.test.js
 ```
 
 截至当前文档更新，本地测试覆盖：
 
 - ChatGPT share link 解析 fixture。
 - Chrome 扩展 payload 导入。
+- Chrome 扩展纯逻辑测试：回合拆分、单边消息告警、重复片段去重。
 - `/api/browser-capture` token 鉴权。
 - 音频 `HEAD` 支持。
 - Podcast feed 兼容元数据。

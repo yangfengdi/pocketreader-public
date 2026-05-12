@@ -135,7 +135,7 @@ var POCKETREADER_BINARY_DOCUMENT_EXTENSIONS = new Set(["docx"]);
       latestCapture = capture;
       titleInput.value = capture.title;
       showStatus(
-        recognitionMessage(capture.messages.length, capture.files.length),
+        recognitionMessage(capture.messages, capture.files.length),
         capture.messages.length || capture.files.length ? "" : "error"
       );
     }
@@ -161,6 +161,15 @@ var POCKETREADER_BINARY_DOCUMENT_EXTENSIONS = new Set(["docx"]);
 
     if (!capture.messages.length && !capture.files.length) {
       showStatus("没有识别到可导入的对话文本或文本文件。", "error");
+      return;
+    }
+    if (
+      capture.split_by_turn &&
+      capture.include_user_question &&
+      capture.messages.length &&
+      !hasBothConversationRoles(capture.messages)
+    ) {
+      showStatus("没有完整识别到问题和 AI 回复，已停止提交。请刷新页面后重试。", "error");
       return;
     }
 
@@ -308,7 +317,7 @@ function extractClaudeMessages() {
     ["User", "[data-testid='user-message'], [data-testid*='user-message']"],
     ["AI", "[data-testid='assistant-message'], [data-testid*='assistant-message']"]
   ]);
-  if (structuredMessages.length) {
+  if (hasBothConversationRoles(structuredMessages)) {
     return structuredMessages;
   }
 
@@ -329,6 +338,13 @@ function collectCandidates(roleSelectors) {
     role: candidate.role,
     text: textFromNode(readableChild(candidate.node) || candidate.node)
   }));
+}
+
+function hasBothConversationRoles(messages) {
+  return (
+    messages.some((message) => normalizeRole(message.role) === "User") &&
+    messages.some((message) => normalizeRole(message.role) === "AI")
+  );
 }
 
 function addCandidate(candidates, role, node) {
@@ -401,7 +417,6 @@ function collectGeneratedFileCandidates(platform, messages = []) {
   }
   if (platform === "claude") {
     addClaudeArtifactCandidates(candidates, messages);
-    addVisibleSidePanelCandidates(candidates, messages);
   }
   return candidates;
 }
@@ -541,57 +556,6 @@ function addClaudeArtifactCandidates(candidates, messages = []) {
   }
 }
 
-function addVisibleSidePanelCandidates(candidates, messages = []) {
-  const nodes = Array.from(
-    document.querySelectorAll(
-      [
-        "main",
-        "article",
-        "section",
-        "[role='main']",
-        "[role='dialog']",
-        "[role='tabpanel']",
-        "[data-testid]",
-        "[class]"
-      ].join(",")
-    )
-  )
-    .filter(isVisible)
-    .filter(isLikelySidePanelNode)
-    .sort(compareNodeDepth);
-
-  const panelCandidates = [];
-  for (const node of nodes) {
-    if (node.closest("#pocketreader-capture-root")) {
-      continue;
-    }
-    if (isInsideConversationMessage(node)) {
-      continue;
-    }
-    const body = artifactBodyFromNode(node);
-    if (!body || overlapsKnownMessages(body, messages)) {
-      continue;
-    }
-    const title = artifactTitleFromNode(node, body);
-    const filename = `${safeFilename(title || "claude-artifact")}.md`;
-    const key = `claude-side-panel\n${title}\n${body.slice(0, 500)}`;
-    addInlineFileCandidate(panelCandidates, {
-      key,
-      node,
-      title: title || filename,
-      filename,
-      url: "",
-      inline_body: body
-    });
-  }
-  const bestCandidate = panelCandidates.sort(
-    (left, right) => right.inline_body.length - left.inline_body.length
-  )[0];
-  if (bestCandidate) {
-    addInlineFileCandidate(candidates, bestCandidate);
-  }
-}
-
 function addInlineFileCandidate(candidates, candidate) {
   if (!candidate.inline_body) {
     return;
@@ -609,37 +573,6 @@ function addInlineFileCandidate(candidates, candidate) {
     return;
   }
   candidates.push(candidate);
-}
-
-function isLikelySidePanelNode(node) {
-  const rect = node.getBoundingClientRect();
-  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
-  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
-  if (!viewportWidth || rect.width < 220 || rect.height < 120) {
-    return false;
-  }
-  if (rect.left < viewportWidth * 0.28 && rect.right < viewportWidth * 0.72) {
-    return false;
-  }
-  if (rect.width > viewportWidth * 0.82 && rect.height > viewportHeight * 0.82) {
-    return false;
-  }
-  const text = stripArtifactUiLines(textFromArtifactNode(node));
-  return looksLikeArtifactBody(text);
-}
-
-function isInsideConversationMessage(node) {
-  return Boolean(
-    node.closest(
-      [
-        "[data-message-author-role]",
-        "[data-testid*='user-message']",
-        "[data-testid*='assistant-message']",
-        ".font-user-message",
-        ".font-claude-message"
-      ].join(",")
-    )
-  );
 }
 
 function artifactBodyFromNode(node) {
@@ -812,7 +745,7 @@ function textContainsEither(left, right) {
   }
   const shorter = normalizedLeft.length < normalizedRight.length ? normalizedLeft : normalizedRight;
   const longer = normalizedLeft.length < normalizedRight.length ? normalizedRight : normalizedLeft;
-  if (shorter.length < 80) {
+  if (shorter.length < 20) {
     return false;
   }
   return longer.includes(shorter);
@@ -1045,12 +978,50 @@ function isMostlyUiText(text) {
   return uiPhrases.includes(normalized.toLowerCase());
 }
 
-function recognitionMessage(messageCount, fileCount) {
-  const parts = [`已识别 ${messageCount} 条消息`];
+function recognitionMessage(messages, fileCount) {
+  const turns = splitMessagesIntoTurns(messages);
+  const userCount = messages.filter((message) => normalizeRole(message.role) === "User").length;
+  const aiCount = messages.filter((message) => normalizeRole(message.role) === "AI").length;
+  const parts = [`已识别 ${messages.length} 条消息`];
+  if (turns.length) {
+    parts.push(`${turns.length} 个回合`);
+  }
+  if (messages.length && (!userCount || !aiCount)) {
+    parts.push("未完整识别问答双方");
+  }
   if (fileCount) {
     parts.push(`${fileCount} 个文本文件`);
   }
   return parts.join("，");
+}
+
+function splitMessagesIntoTurns(messages) {
+  const turns = [];
+  let currentTurn = [];
+  let hasAiMessage = false;
+
+  for (const message of messages) {
+    const role = normalizeRole(message.role);
+    if (!role || !cleanText(message.text || "")) {
+      continue;
+    }
+    if (role === "User") {
+      if (hasAiMessage) {
+        turns.push(currentTurn);
+        currentTurn = [];
+        hasAiMessage = false;
+      }
+      currentTurn.push(message);
+      continue;
+    }
+    currentTurn.push(message);
+    hasAiMessage = true;
+  }
+
+  if (currentTurn.length && hasAiMessage) {
+    turns.push(currentTurn);
+  }
+  return turns;
 }
 
 function isRuntimeAvailable() {

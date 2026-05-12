@@ -133,8 +133,9 @@ Docker Compose 发布端口：
   - 默认朗读“问题和 AI 回复”。
   - 可选“每个回合生成一个独立音频”。
   - 拆分标题使用 `[1/9]`、`[05/19]`、`[012/109]` 这类编号。
-  - 可读取的 AI 生成文件会被单独导入，标题前缀为 `[文件]` 或 `[文件 1/2]`；Claude Artifact 需要正文已出现在当前页面 DOM 中。
+  - 可读取的 AI 生成文件会被单独导入，标题前缀为 `[文件]` 或 `[文件 1/2]`；Claude Artifact 必须有明确 Artifact DOM 标记，不能靠右侧大块文本猜测。
   - 扩展 reload 后必须刷新已打开的 AI 页面，否则旧 content script 会报 `Extension context invalidated`。
+  - AI 平台解析规则见 `docs/ai-capture-design.md`；不要用宽泛 selector 临时修 Claude，否则容易误抓重复消息或把正文误判为文件。
 
 - TTS：
   - `edge-tts`
@@ -195,6 +196,7 @@ git push origin main
 4. `docs/deployment.md`
 5. `docs/operations.md`
 6. `docs/browser-extension.md`
-7. 本文件
+7. `docs/ai-capture-design.md`
+8. 本文件
 
 改代码前运行测试；部署前确认不会触碰 other-app/other-app。

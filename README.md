@@ -15,7 +15,7 @@ https://reader.example.com
 - 导入公开 URL，并对部分 AI share link 做专门解析。
 - 通过 Chrome 扩展从已登录的 ChatGPT、Gemini、Claude 页面直接抓取当前对话。
 - Chrome 扩展可把 AI 多回合对话拆成“每个回合一个独立音频”，并在标题前加 `[1/9]` 这类顺序编号。
-- Chrome 扩展会把对话中可读取的 AI 生成文本文件、`.docx` 和已展开的 Claude Artifact 单独导入为音频条目，标题使用 `[文件]` 或 `[文件 1/2]` 前缀。
+- Chrome 扩展会把对话中可读取的 AI 生成文本文件、`.docx` 和带明确 Artifact 标记的 Claude Artifact 单独导入为音频条目，标题使用 `[文件]` 或 `[文件 1/2]` 前缀。
 - 在网页 UI 中选择多个 TTS 声音。
 - 长文本会被切分成安全长度的小段，逐段生成 MP3，再合并成单个音频文件。
 - 保存条目的创建时间、生成时间、首次收听、最近收听、完成时间和播放进度。
@@ -56,6 +56,7 @@ docs/
   deployment.md               部署、更新和回滚
   operations.md               日常运维、排障和 token 管理
   browser-extension.md        Chrome 扩展安装和维护
+  ai-capture-design.md        AI 对话解析规则和稳定性约束
   ai-handoff.md               给未来 AI Agent 的交接注意事项
 tests/                        回归测试
 ```
@@ -88,6 +89,7 @@ python -m compileall pocketreader
 node --check browser-extension/background.js
 node --check browser-extension/content-script.js
 node --check browser-extension/options.js
+node tests/browser_extension_capture.test.js
 ```
 
 ## 生产部署概要
