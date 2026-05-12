@@ -127,9 +127,13 @@ Docker Compose 发布端口：
 - Chrome 扩展：
   - 目录：`browser-extension/`
   - 配置页：`options.html`
-  - 提交接口：`POST /api/browser-capture`
+  - 解析接口：`POST /api/browser-snapshot`
+  - 创建接口：`POST /api/browser-snapshot/<capture_id>/create`
+  - 旧兼容接口：`POST /api/browser-capture`
   - 登录后的服务器帮助页：`/extension`
   - 支持 ChatGPT、Gemini、Claude 当前页面导入。
+  - 架构是“扩展采集候选 DOM blocks，后端保存 raw snapshot 并解析”。
+  - 原始快照保存在 `browser_captures`，解析结果保存在 `browser_parse_runs`。
   - 默认朗读“问题和 AI 回复”。
   - 可选“每个回合生成一个独立音频”。
   - 拆分标题使用 `[1/9]`、`[05/19]`、`[012/109]` 这类编号。

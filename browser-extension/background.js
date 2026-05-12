@@ -28,23 +28,54 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "POCKETREADER_SNAPSHOT_PARSE") {
+    parseSnapshot(message.payload)
+      .then((result) => sendResponse({ ok: true, result }))
+      .catch((error) => sendResponse({ ok: false, error: error.message || String(error) }));
+    return true;
+  }
+
+  if (message.type === "POCKETREADER_SNAPSHOT_CREATE") {
+    createSnapshotItems(message.payload)
+      .then((result) => sendResponse({ ok: true, result }))
+      .catch((error) => sendResponse({ ok: false, error: error.message || String(error) }));
+    return true;
+  }
+
   return false;
 });
 
 async function submitCapture(payload) {
+  const body = await payloadWithSettings(payload);
+  return postPocketReader("/api/browser-capture", body);
+}
+
+async function parseSnapshot(payload) {
+  const settings = await requireSettings();
+  const body = {
+    ...payload,
+    extension_version: chrome.runtime.getManifest().version
+  };
+  return postPocketReader("/api/browser-snapshot", body, settings);
+}
+
+async function createSnapshotItems(payload) {
+  const body = await payloadWithSettings(payload);
+  const captureId = Number(body.capture_id || 0);
+  if (!captureId) {
+    throw new Error("缺少 capture_id，请重新打开导入面板。");
+  }
+  return postPocketReader(`/api/browser-snapshot/${captureId}/create`, body);
+}
+
+async function payloadWithSettings(payload) {
   const settings = await chrome.storage.sync.get(DEFAULTS);
-  const baseUrl = String(settings.baseUrl || DEFAULTS.baseUrl).replace(/\/+$/, "");
-  const importToken = String(settings.importToken || "");
   const readerMode =
     Number(settings.settingsVersion || 0) < SETTINGS_VERSION
       ? DEFAULTS.readerMode
       : settings.readerMode || DEFAULTS.readerMode;
-  if (!importToken) {
-    await openOptionsPage();
-    throw new Error("请在打开的扩展设置页填写 IMPORT_TOKEN，然后回到这里重新提交。");
-  }
 
-  const body = {
+  return {
     ...payload,
     voice: payload.voice || settings.voice || DEFAULTS.voice,
     reader_mode: payload.reader_mode || readerMode,
@@ -52,8 +83,23 @@ async function submitCapture(payload) {
     include_user_question:
       payload.include_user_question ?? ((payload.reader_mode || readerMode) !== "assistant")
   };
+}
 
-  const response = await fetch(`${baseUrl}/api/browser-capture`, {
+async function requireSettings() {
+  const settings = await chrome.storage.sync.get(DEFAULTS);
+  const importToken = String(settings.importToken || "");
+  if (!importToken) {
+    await openOptionsPage();
+    throw new Error("请在打开的扩展设置页填写 IMPORT_TOKEN，然后回到这里重新提交。");
+  }
+  return settings;
+}
+
+async function postPocketReader(path, body, providedSettings = null) {
+  const settings = providedSettings || (await requireSettings());
+  const baseUrl = String(settings.baseUrl || DEFAULTS.baseUrl).replace(/\/+$/, "");
+  const importToken = String(settings.importToken || "");
+  const response = await fetch(`${baseUrl}${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

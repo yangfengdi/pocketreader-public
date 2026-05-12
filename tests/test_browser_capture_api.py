@@ -210,6 +210,130 @@ class BrowserCaptureApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
 
+    def test_browser_snapshot_parse_and_create_split_claude_turns(self) -> None:
+        client = TestClient(main.app)
+
+        parse_response = client.post(
+            "/api/browser-snapshot",
+            headers={"X-PocketReader-Import-Token": "import-token"},
+            json={
+                "platform": "claude",
+                "url": "https://claude.ai/chat/test",
+                "title": "AI时代的儿童教育长期规划",
+                "snapshot": {
+                    "blocks": [
+                        claude_block(0, "User", "问题一"),
+                        claude_block(1, "AI", "回答一"),
+                        claude_block(2, "User", "问题二"),
+                        claude_block(3, "AI", "回答二"),
+                        claude_block(4, "User", "问题三"),
+                        claude_block(5, "AI", "回答三"),
+                    ]
+                },
+            },
+        )
+
+        self.assertEqual(parse_response.status_code, 200)
+        parsed = parse_response.json()
+        self.assertEqual(parsed["summary"]["message_count"], 6)
+        self.assertEqual(parsed["summary"]["turn_count"], 3)
+        self.assertEqual(parsed["summary"]["file_count"], 0)
+        self.assertEqual(parsed["warnings"], [])
+
+        create_response = client.post(
+            f"/api/browser-snapshot/{parsed['capture_id']}/create",
+            headers={"X-PocketReader-Import-Token": "import-token"},
+            json={
+                "title": "AI时代的儿童教育长期规划",
+                "reader_mode": "all",
+                "split_by_turn": True,
+                "include_user_question": True,
+                "voice": "zh-CN-XiaoxiaoNeural",
+            },
+        )
+
+        self.assertEqual(create_response.status_code, 200)
+        data = create_response.json()
+        self.assertEqual(data["count"], 3)
+        first = main.db.get_item(data["item_ids"][0])
+        third = main.db.get_item(data["item_ids"][2])
+        self.assertIsNotNone(first)
+        self.assertIsNotNone(third)
+        assert first is not None
+        assert third is not None
+        self.assertEqual(first["title"], "[1/3] AI时代的儿童教育长期规划")
+        self.assertEqual(first["body"], "User: 问题一\n\nAI: 回答一")
+        self.assertEqual(third["title"], "[3/3] AI时代的儿童教育长期规划")
+        self.assertEqual(third["body"], "User: 问题三\n\nAI: 回答三")
+
+    def test_browser_snapshot_does_not_treat_plain_claude_reply_as_file(self) -> None:
+        client = TestClient(main.app)
+
+        response = client.post(
+            "/api/browser-snapshot",
+            headers={"X-PocketReader-Import-Token": "import-token"},
+            json={
+                "platform": "claude",
+                "title": "普通 Claude 回复",
+                "snapshot": {
+                    "blocks": [
+                        claude_block(0, "User", "请帮我规划一个课题"),
+                        claude_block(
+                            1,
+                            "AI",
+                            "这是一个非常有价值的课题。\n\n一、定位判断\n\n这里是正文，不是文件。",
+                        ),
+                        {
+                            "index": 2,
+                            "tag": "div",
+                            "kind_hint": "message",
+                            "attrs": {"class": "right-side-panel"},
+                            "text": "这是右侧展示的一大段普通文本，但没有 artifact 或文件标记。",
+                        },
+                    ]
+                },
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["summary"]["message_count"], 2)
+        self.assertEqual(data["summary"]["turn_count"], 1)
+        self.assertEqual(data["summary"]["file_count"], 0)
+
+    def test_browser_snapshot_create_rejects_split_when_questions_are_missing(self) -> None:
+        client = TestClient(main.app)
+
+        parse_response = client.post(
+            "/api/browser-snapshot",
+            headers={"X-PocketReader-Import-Token": "import-token"},
+            json={
+                "platform": "claude",
+                "title": "只有回复",
+                "snapshot": {
+                    "blocks": [
+                        claude_block(0, "AI", "回答一"),
+                        claude_block(1, "AI", "回答二"),
+                    ]
+                },
+            },
+        )
+
+        self.assertEqual(parse_response.status_code, 200)
+        self.assertIn("未完整识别问答双方", parse_response.json()["warnings"])
+
+        create_response = client.post(
+            f"/api/browser-snapshot/{parse_response.json()['capture_id']}/create",
+            headers={"X-PocketReader-Import-Token": "import-token"},
+            json={
+                "reader_mode": "all",
+                "split_by_turn": True,
+                "include_user_question": True,
+            },
+        )
+
+        self.assertEqual(create_response.status_code, 400)
+
     def test_audio_head_supports_podcast_enclosure_checks(self) -> None:
         client = TestClient(main.app)
         item_id = main.db.create_item(
@@ -259,6 +383,19 @@ class BrowserCaptureApiTests(unittest.TestCase):
         self.assertIn('guid isPermaLink="false"', feed)
         self.assertIn("<itunes:duration>1:05</itunes:duration>", feed)
         self.assertIn("<itunes:explicit>false</itunes:explicit>", feed)
+
+
+def claude_block(index: int, role: str, text: str) -> dict[str, object]:
+    test_id = "user-message" if role == "User" else "assistant-message"
+    class_name = "font-user-message" if role == "User" else "font-claude-message"
+    return {
+        "index": index,
+        "tag": "div",
+        "role_hint": role,
+        "kind_hint": "message",
+        "attrs": {"data-testid": test_id, "class": class_name},
+        "text": text,
+    }
 
 
 if __name__ == "__main__":

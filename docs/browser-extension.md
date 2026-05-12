@@ -1,6 +1,6 @@
 # Chrome 扩展说明
 
-PocketReader Capture 是一个本地加载的 Chrome extension。它在用户已经登录的 AI 网站页面里提取当前对话文本，然后提交给 PocketReader。
+PocketReader Capture 是一个本地加载的 Chrome extension。它在用户已经登录的 AI 网站页面里采集当前页面快照，然后提交给 PocketReader，由后端保存原始快照并解析为对话、回合和文件。
 
 支持页面：
 
@@ -54,12 +54,24 @@ https://reader.example.com/extension
 - 平台名。
 - 当前页面 URL。
 - 标题。
-- 朗读范围。
-- 选择的声音。
-- 提取出的 user / AI messages。
+- 页面候选块：文本、DOM 顺序、关键属性、role hint、kind hint。
 - AI 生成文件的文件名、文本内容，或小型 `.docx` 文件的 base64 数据。
 
 扩展不会把 AI 账号 cookie 发给 PocketReader。
+
+点击“导入 PocketReader”打开面板时，扩展会先调用：
+
+```text
+POST /api/browser-snapshot
+```
+
+服务器返回 `capture_id`、消息数、回合数、文件数和 warnings。点击“提交导入”时，扩展再调用：
+
+```text
+POST /api/browser-snapshot/<capture_id>/create
+```
+
+朗读范围、声音、是否拆分回合等用户选项在第二步提交。这样同一份原始快照会保存在服务器上，后续可以重新解析和调试。
 
 ## 更新扩展代码后
 
@@ -84,23 +96,28 @@ Extension context invalidated.
 - `browser-extension/content-script.js` 是否通过 `chrome.runtime.sendMessage` 请求打开设置页。
 - 不要在 content script 中直接调用 `chrome.runtime.openOptionsPage()`；某些 Chrome 环境中这个函数不存在。
 
-## 维护提取逻辑
+## 维护采集逻辑
 
-每个平台的 DOM selector 写在：
+每个平台的 DOM selector 仍写在：
 
 ```text
 browser-extension/content-script.js
 ```
 
-对应函数：
+主要函数：
 
-- `extractChatGPTMessages`
-- `extractGeminiMessages`
-- `extractClaudeMessages`
+- `capturePageSnapshot`
+- `collectSnapshotBlocks`
+- `snapshotSelectors`
+- `snapshotBlockFromNode`
 
-如果某个 AI 网站改版导致导入为空或混入 UI 文案，优先只改对应平台 extractor。
+旧的 `extractChatGPTMessages`、`extractGeminiMessages`、`extractClaudeMessages` 还保留，用于兼容测试和旧接口思路，但新扩展流程以 snapshot 为准。
 
-扩展会先清理不可见节点、按钮、图标、脚本、输入框等，再做去重。服务端还会再次标准化 role 和文本。
+如果某个 AI 网站改版导致导入为空，先看服务器保存的 `browser_captures.raw_snapshot_json`：
+
+- 如果 `blocks` 为空，说明扩展没有采集到候选节点，应改 `snapshotSelectors`。
+- 如果 `blocks` 有内容但解析结果错了，应改后端 `pocketreader/browser_snapshot.py`。
+- 不要为了修一个 Claude 样例就扩大成全页面文本抓取；这会重新引入重复消息和误判文件。
 
 平台解析规则和稳定性约束集中记录在：
 
@@ -108,12 +125,12 @@ browser-extension/content-script.js
 docs/ai-capture-design.md
 ```
 
-修改 ChatGPT / Gemini / Claude selector 前，先阅读该文档，并补充 `tests/browser_extension_capture.test.js` 中的回归用例。
+修改 ChatGPT / Gemini / Claude selector 前，先阅读该文档，并补充后端或扩展回归用例。
 
 ## 后端接口
 
 ```text
-POST /api/browser-capture
+POST /api/browser-snapshot
 X-PocketReader-Import-Token: <IMPORT_TOKEN>
 ```
 
@@ -124,24 +141,54 @@ Payload 示例：
   "platform": "gemini",
   "url": "https://gemini.google.com/...",
   "title": "Conversation title",
+  "extension_version": "0.1.7",
+  "snapshot": {
+    "blocks": [
+      {
+        "index": 0,
+        "role_hint": "User",
+        "kind_hint": "message",
+        "attrs": {"data-testid": "user-message"},
+        "text": "Question"
+      },
+      {
+        "index": 1,
+        "role_hint": "AI",
+        "kind_hint": "message",
+        "attrs": {"data-testid": "assistant-message"},
+        "text": "Answer"
+      }
+    ],
+    "files": [
+      {"filename": "outline.md", "body": "# Outline\n\nText"}
+    ]
+  }
+}
+```
+
+解析成功后，扩展拿到 `capture_id`，再调用：
+
+```text
+POST /api/browser-snapshot/<capture_id>/create
+X-PocketReader-Import-Token: <IMPORT_TOKEN>
+```
+
+Payload 示例：
+
+```json
+{
+  "title": "Conversation title",
   "reader_mode": "all",
   "split_by_turn": true,
   "include_user_question": true,
-  "voice": "zh-CN-XiaoxiaoNeural",
-  "messages": [
-    {"role": "User", "text": "Question"},
-    {"role": "AI", "text": "Answer"}
-  ],
-  "files": [
-    {"filename": "outline.md", "body": "# Outline\n\nText"},
-    {"filename": "draft.docx", "data_base64": "..."}
-  ]
+  "voice": "zh-CN-XiaoxiaoNeural"
 }
 ```
 
 服务端行为：
 
 - 校验 `IMPORT_TOKEN`。
+- 保存原始 snapshot。
 - 标准化 role：`human/user/you` -> `User`，`assistant/model/ai/claude` -> `AI`。
 - 根据 `reader_mode` 选择只保留 AI 回复或完整对话。
 - `split_by_turn=false` 时，创建一个普通 `queued` item。
@@ -151,6 +198,8 @@ Payload 示例：
 - 如果 payload 中有 `files`，服务端会为每个可读取文件创建独立 item。
 - 文件标题使用 `[文件]` 或 `[文件 1/2]` 前缀，`source_type` 为 `browser:<platform>:file`。
 - 交给同一个 TTS worker 生成音频。
+
+旧接口 `POST /api/browser-capture` 仍保留兼容，不作为扩展主路径。
 
 ## 按回合拆分
 

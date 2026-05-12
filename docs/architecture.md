@@ -26,16 +26,21 @@ Docker container: FastAPI + background worker
 ```text
 Chrome 中的 AI 网站
         |
-        | content script 提取当前页面可见对话
+        | content script 采集当前页面候选块和明确文件
         v
 Chrome extension background.js
         |
-        | POST /api/browser-capture
+        | POST /api/browser-snapshot
         | X-PocketReader-Import-Token: <IMPORT_TOKEN>
         v
-PocketReader 后端创建一个 queued item
+PocketReader 后端保存 raw snapshot 并解析
         |
-        +-- 或按回合拆成多个 queued items
+        | POST /api/browser-snapshot/<capture_id>/create
+        v
+PocketReader 后端创建 queued items
+        |
+        +-- 可按回合拆成多个 items
+        +-- 可为 AI 生成文件创建独立 items
 ```
 
 Podcast 链路：
@@ -59,9 +64,17 @@ GET / HEAD / Range GET audio file
   - 登录、退出。
   - 文本、文件、URL 导入表单。
   - Chrome 扩展导入 API。
+  - 浏览器快照保存、解析和按快照创建条目。
   - 音频下载和 Podcast Feed。
   - 启动一个 background worker。
   - 启动时恢复中断的 `processing` 条目。
+
+- `pocketreader.browser_snapshot`
+  - 浏览器扩展 snapshot 的后端解析器。
+  - 从候选 DOM blocks 中识别 `User` / `AI` 消息。
+  - 识别明确文件和 Claude Artifact。
+  - 生成 message count、turn count、file count、warnings。
+  - 保守原则：不能靠“右侧大块文本”或“文本很长”推断文件。
 
 - `pocketreader.db`
   - SQLite schema。
@@ -88,9 +101,10 @@ GET / HEAD / Range GET audio file
 - `browser-extension`
   - Manifest V3 Chrome extension。
   - content script 注入“导入 PocketReader”按钮。
-  - 分别对 ChatGPT、Gemini、Claude 写 DOM extractor。
-  - 在 AI 回复区域内寻找可读取的文件链接或文件卡片。
-  - background service worker 负责提交到 PocketReader 和打开 options page。
+  - 分别对 ChatGPT、Gemini、Claude 写 snapshot selectors。
+  - 采集候选 DOM blocks，而不是在扩展内做最终解析。
+  - 在 AI 回复区域内寻找可读取的文件链接、文件卡片或 Claude Artifact。
+  - background service worker 负责调用 snapshot parse/create 接口和打开 options page。
   - 面板提供“每个回合生成一个独立音频”checkbox。
 
 ## 数据库
@@ -116,6 +130,14 @@ GET / HEAD / Range GET audio file
 
 - `listen_events`
   - `play`、`pause`、`progress`、`seek`、`ended`。
+
+- `browser_captures`
+  - Chrome 扩展提交的原始页面快照。
+  - 用于后续复盘、调试和重跑解析逻辑。
+
+- `browser_parse_runs`
+  - 每一次后端解析结果。
+  - 同一个 `capture_id` 可以有多条 parse run，用于比较不同 parser version 的行为。
 
 ## TTS 状态流
 

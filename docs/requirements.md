@@ -77,7 +77,7 @@ iPhone 13 Pro Max
 
 ## 已知限制
 
-- AI 网站 DOM 结构变化时，Chrome 扩展的 extractor 可能需要维护。
+- AI 网站 DOM 结构变化时，Chrome 扩展的 snapshot selectors 或后端 `browser_snapshot` 解析器可能需要维护。
 - 扩展 reload 后，已经打开的 AI 页面必须刷新；否则旧 content script 会失去 runtime 上下文并显示 `Extension context invalidated`。
 - Gemini / Claude share link 后端抓取不稳定，主要推荐 Chrome 扩展导入。
 - Pocket Cast 可能有自己的服务端缓存，feed 修改后它不一定像 Apple Podcasts 那样立即显示所有新条目。

@@ -1,32 +1,174 @@
-# AI 对话解析设计
+# AI 对话采集与解析设计
 
-## 目标
+## 总目标
 
-PocketReader 的浏览器扩展负责从用户已经登录的 AI 页面里读取当前对话，再提交到后端生成音频。这个链路的目标是稳定、可解释，而不是尽可能多地猜测页面内容。
+PocketReader 需要把 ChatGPT、Gemini、Claude 中的 AI 对话导入为可朗读音频。这个功能面向个人使用，但要求稳定、可调试、可接手。
 
 核心需求：
 
 - 支持 ChatGPT、Gemini、Claude 当前对话页。
-- 识别 User 与 AI 两类消息，并保持页面顺序。
-- 默认朗读“问题和 AI 回复”。
-- 可选“只读 AI 回复”。
-- 可选“每个回合生成一个独立音频”。
-- 拆分回合时，标题必须使用 `[1/3]`、`[2/3]` 这类前缀。
-- 如果页面里有明确的 AI 生成文件，文件应单独生成音频。
-- 不应把普通 AI 回复、页面侧栏、导航、按钮、历史列表误判为文件。
+- 支持 ChatGPT share link 的旧导入方式。
+- 默认朗读“问题和 AI 回复”，用户可选择“只读 AI 回复”。
+- 浏览器扩展支持“每个回合生成一个独立音频”。
+- 拆分回合时，标题必须用 `[1/3]`、`[05/19]`、`[012/109]` 这种前缀，保证播客客户端按顺序播放。
+- 如果 AI 对话里有明确生成的文本文件或 Claude Artifact，每个文件要单独生成一个音频。
+- 不要把普通 AI 回复、历史列表、侧栏、按钮、导航误判为消息或文件。
 
-## 稳定性原则
+## 架构决策
 
-1. 宁可少抓文件，也不要误抓正文为文件。
-2. 每个平台先使用明确消息容器，再使用有限 fallback。
-3. 只有同时识别到 User 和 AI，才认为“完整识别问答双方”。
-4. 不能用宽泛 selector 抓消息，例如在 Claude 中直接抓 `.markdown`，这会把同一回复里的段落节点重复当成消息。
-5. 不能用“右侧大块文本”自动判断文件；Claude 页面右侧可能是 Artifact，也可能是普通对话正文或预览容器。
-6. 扩展状态栏必须暴露识别结果，让提交前能看到明显异常，例如“未完整识别问答双方”。
+当前架构采用“扩展采集，后端解析”：
+
+```text
+AI 网站页面
+  |
+  | Chrome content script 采集页面快照
+  v
+Chrome background.js
+  |
+  | POST /api/browser-snapshot
+  v
+PocketReader 保存原始快照并解析
+  |
+  | POST /api/browser-snapshot/<capture_id>/create
+  v
+PocketReader 创建 queued items
+```
+
+这样做的原因：
+
+- DOM 解析规则经常变化，放在扩展里不方便测试和复盘。
+- 服务器保存原始快照后，即使第一次解析错了，也可以用同一份原始样本反复调试解析逻辑。
+- 扩展仍运行在用户已登录的 AI 页面里，能看到服务器无法直接抓取的内容；但扩展尽量只做采集和轻量标注，不负责最终判断。
+
+## 数据持久化
+
+数据库新增两张表：
+
+- `browser_captures`
+  - 保存扩展提交的原始页面快照。
+  - 字段包括 `platform`、`source_url`、`page_title`、`extension_version`、`raw_snapshot_json`、`created_at`。
+- `browser_parse_runs`
+  - 保存每一次解析结果。
+  - 字段包括 `capture_id`、`parser_version`、`result_json`、`error`、`created_at`。
+
+后续调试某个失败案例时，优先查这两张表，而不是重新问用户截图：
+
+```bash
+sqlite3 /var/lib/apps/pocketreader/pocketreader.sqlite3
+SELECT id, platform, source_url, page_title, created_at
+FROM browser_captures
+ORDER BY id DESC
+LIMIT 20;
+
+SELECT parser_version, result_json
+FROM browser_parse_runs
+WHERE capture_id = <id>
+ORDER BY id DESC
+LIMIT 1;
+```
+
+## 接口
+
+扩展解析当前页面：
+
+```http
+POST /api/browser-snapshot
+X-PocketReader-Import-Token: <IMPORT_TOKEN>
+```
+
+payload 结构：
+
+```json
+{
+  "platform": "claude",
+  "url": "https://claude.ai/chat/...",
+  "title": "页面标题",
+  "extension_version": "0.1.7",
+  "snapshot": {
+    "page": {"platform": "claude", "url": "...", "host": "claude.ai", "title": "..."},
+    "blocks": [
+      {
+        "index": 0,
+        "tag": "div",
+        "path": "main > div[data-testid=\"user-message\"]",
+        "role_hint": "User",
+        "kind_hint": "message",
+        "attrs": {"data-testid": "user-message", "class": "..."},
+        "rect": {"top": 120, "left": 80, "width": 600, "height": 120},
+        "text": "用户问题"
+      }
+    ],
+    "files": [
+      {"filename": "outline.md", "body": "# Outline\n\n..."}
+    ]
+  }
+}
+```
+
+接口返回：
+
+```json
+{
+  "capture_id": 123,
+  "parse_run_id": 456,
+  "parser_version": "2026-05-12.1",
+  "title": "页面标题",
+  "summary": {
+    "message_count": 6,
+    "turn_count": 3,
+    "file_count": 0,
+    "has_user_messages": true,
+    "has_ai_messages": true
+  },
+  "warnings": []
+}
+```
+
+根据保存的快照创建条目：
+
+```http
+POST /api/browser-snapshot/<capture_id>/create
+X-PocketReader-Import-Token: <IMPORT_TOKEN>
+```
+
+payload：
+
+```json
+{
+  "title": "标题",
+  "reader_mode": "all",
+  "split_by_turn": true,
+  "include_user_question": true,
+  "voice": "zh-CN-XiaoxiaoNeural"
+}
+```
+
+旧接口 `POST /api/browser-capture` 保留，用于兼容旧扩展或测试，但新的扩展流程不再依赖它。
+
+## 快照采集规则
+
+扩展采集的是“候选块”，不是最终消息列表。每个候选块带：
+
+- 可读文本 `text`。
+- DOM 顺序 `index`。
+- 轻量 role hint：`User`、`AI` 或空。
+- 轻量 kind hint：`message`、`file`、`artifact`。
+- 关键属性：`data-testid`、`class`、`aria-label`、`title`、`href` 等。
+
+扩展不发送 AI 账号 cookie。能下载的文本文件或 `.docx` 会由扩展读取正文或 base64 后放入 `snapshot.files`，因为这些链接通常依赖用户浏览器会话，服务器无法直接获取。
+
+## 后端解析原则
+
+1. 后端才是最终解析者。
+2. `role_hint` 只是提示，后端会结合 `data-testid`、`class`、tag、平台规则重新判断。
+3. 文件识别必须有明确文件证据，例如文件扩展名、download/file/attachment 标记，或明确 artifact/canvas 标记。
+4. 禁止用“右侧大块文本”“文本很长”“看起来像文章”推断文件。
+5. 同一 role 的父节点和子节点重复时，只保留更完整的一份。
+6. 只有同时识别到 User 和 AI，才认为完整识别问答双方。
 
 ## 回合拆分规则
 
-扩展和后端采用同一逻辑：
+后端规则：
 
 ```text
 User 开始一个新回合
@@ -35,7 +177,7 @@ User 开始一个新回合
 没有 AI 回复的悬空 User 不生成音频
 ```
 
-例：
+示例：
 
 ```text
 User 1
@@ -46,7 +188,7 @@ User 3
 AI 3
 ```
 
-生成 3 个回合：
+生成：
 
 ```text
 [1/3] User 1 + AI 1
@@ -54,84 +196,62 @@ AI 3
 [3/3] User 3 + AI 3
 ```
 
-如果扩展只识别到 AI，没有识别到 User，且用户选择了“问题和 AI 回复”，扩展应停止提交并提示页面没有完整识别。
+如果用户选择“每个回合生成一个独立音频”且朗读范围是“问题和 AI 回复”，但后端没有识别到 User，创建接口会返回 400，避免生成只有回答、标题也不对的错误条目。
 
-## ChatGPT 解析规则
+## ChatGPT 规则
 
-优先规则：
+页面内扩展优先采集：
 
-- 消息节点：`[data-message-author-role]`
-- role 来源：`data-message-author-role`
-- 文本来源：消息节点内的 readable child，优先 `.markdown`
+- `[data-message-author-role]`
+- `[data-testid*='user-message']`
+- `[data-testid*='assistant-message']`
 
-fallback：
+后端识别：
 
-- User: `[data-testid*='user-message']`、`.font-user-message`
-- AI: `[data-testid*='assistant-message']`、`.markdown.prose`、`.markdown`
+- `data-message-author-role=user` -> `User`
+- `data-message-author-role=assistant` -> `AI`
+- `data-testid` 含 `user-message` -> `User`
+- `data-testid` 含 `assistant-message` -> `AI`
 
-风险：
+ChatGPT share link 仍走网页 URL 导入，解析逻辑在 `pocketreader/importers.py` 的 `extract_chatgpt_share()`。
 
-- fallback 中 `.markdown` 比较宽，只应在 ChatGPT 缺少 `data-message-author-role` 时使用。
+## Gemini 规则
 
-## Gemini 解析规则
+扩展采集：
 
-User selector：
+- User: `user-query`、`[data-test-id='user-query']`、`[data-testid='user-query']`、`.query-text`
+- AI: `model-response`、`[data-test-id='model-response']`、`[data-testid='model-response']`、`.model-response-text`、`.response-container`、`message-content`
 
-```text
-user-query
-[data-test-id='user-query']
-[data-testid='user-query']
-.query-text
-```
+Gemini share link 在服务器未登录环境下通常拿不到正文，因此优先使用扩展。
 
-AI selector：
+## Claude 规则
 
-```text
-model-response
-[data-test-id='model-response']
-[data-testid='model-response']
-.model-response-text
-.response-container
-message-content
-```
+Claude DOM 最容易变化，规则要保守。
 
-Gemini 的 share link 后端抓取不稳定，优先使用浏览器扩展读取已登录页面。
+扩展采集：
 
-## Claude 解析规则
-
-Claude 是最容易漂移的平台，规则必须更保守。
-
-第一优先级：
-
-```text
-User: [data-testid='user-message'], [data-testid*='user-message']
-AI:   [data-testid='assistant-message'], [data-testid*='assistant-message']
-```
-
-只有当这一组结果同时包含 User 和 AI 时，才使用它。
-
-fallback：
-
-```text
-User: .font-user-message
-AI:   .font-claude-message
-```
+- User: `[data-testid='user-message']`、`[data-testid*='user-message']`、`.font-user-message`
+- AI: `[data-testid='assistant-message']`、`[data-testid*='assistant-message']`、`.font-claude-message`
+- 文件/Artifact：明确包含 `artifact`、`canvas`、`file`、`attachment`、`download` 的节点。
 
 禁止：
 
 - 不要用 `.markdown` 作为 Claude 消息 selector。
-- 不要用 `[data-is-streaming]` 作为历史消息 selector。
-- 不要把右侧任意大块文本自动当作文件。
+- 不要用 `[data-is-streaming]` 当历史消息 selector。
+- 不要用“右侧面板大块文本”当文件 fallback。
+
+如果 Claude 页面出现“识别 0 条消息”，优先检查保存到 `browser_captures.raw_snapshot_json` 的 blocks 是否为空。如果 blocks 有内容但解析为空，改后端 `pocketreader/browser_snapshot.py`；如果 blocks 本身为空，再改扩展 selector。
 
 ## AI 生成文件规则
 
-自动文件识别只允许两类来源：
+自动文件识别只允许：
 
 1. 明确文件链接或文件卡片：
    - `a[download]`
    - `a[href]`
-   - 带文件名扩展名的 `title`、`aria-label`、文本内容
-2. 明确 Artifact 容器：
+   - 文件名扩展名出现在 `title`、`aria-label`、文本内容、URL 中
+   - 节点属性包含 `file`、`download`、`attachment`
+2. 明确 Claude Artifact：
    - `data-testid` / `class` / `aria-label` / `title` 中包含 `artifact`
    - `data-testid` / `class` 中包含 `canvas`
 
@@ -140,52 +260,30 @@ AI:   .font-claude-message
 - 文本类：`.txt`、`.md`、`.csv`、`.json`、`.html`、`.py`、`.js`、`.ts`、`.css`、`.sql` 等。
 - `.docx`：扩展读取 base64，后端解析 `word/document.xml`。
 
-不自动支持：
+暂不自动支持：
 
 - PDF。
 - 图片。
 - 表格文件。
-- 只有预览但没有可读正文、没有明确 Artifact 标记的 Claude 右侧内容。
+- 没有明确 artifact/file 标记的右侧预览内容。
 
-这些场景后续应该加“手动把选中文本作为文件导入”的入口，而不是继续扩大自动猜测范围。
+这些场景以后应加“手动把选中文本作为文件导入”的入口，而不是扩大自动猜测范围。
 
-## 提交前 UI 反馈
+## 测试要求
 
-状态栏格式：
-
-```text
-已识别 6 条消息，3 个回合
-已识别 6 条消息，3 个回合，1 个文本文件
-已识别 3 条消息，未完整识别问答双方
-```
-
-当用户勾选“每个回合生成一个独立音频”且选择“问题和 AI 回复”时，如果没有完整识别 User 与 AI，扩展应停止提交。
-
-## 回归测试
-
-浏览器扩展纯逻辑测试：
+修改 AI 解析逻辑后必须跑：
 
 ```bash
+node --check browser-extension/background.js
+node --check browser-extension/content-script.js
+node --check browser-extension/options.js
 node tests/browser_extension_capture.test.js
-```
-
-覆盖内容：
-
-- 三轮问答应拆成 3 个回合。
-- Claude 只抓到 AI 时不能被当作完整问答。
-- 同一 AI 回复的父节点和子段落重复抓取时，只保留完整文本。
-- 状态栏对单边消息给出“未完整识别问答双方”。
-
-后端测试：
-
-```bash
 python -m unittest discover -s tests
 ```
 
-覆盖内容：
+重点回归：
 
-- 浏览器 capture API。
-- 按回合拆分。
-- 文件独立 item。
-- `.docx` 文件解析。
-- Podcast、音频 endpoint、队列恢复等。
+- Claude 三回合问答能生成 3 个拆分条目。
+- 普通 Claude 回复不会被识别为文件。
+- 只识别到 AI、没有 User 时，不能在“问题和 AI 回复”模式下创建拆分音频。
+- 文件 payload 仍能独立生成音频。

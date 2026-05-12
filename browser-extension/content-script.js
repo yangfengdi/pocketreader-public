@@ -105,7 +105,7 @@ var POCKETREADER_BINARY_DOCUMENT_EXTENSIONS = new Set(["docx"]);
   const splitTurnsInput = root.querySelector("[data-pocketreader-split-turns]");
   const voiceSelect = root.querySelector("[data-pocketreader-voice]");
   const statusNode = root.querySelector(".pocketreader-status");
-  let latestCapture = null;
+  let latestSnapshotResult = null;
 
   for (const [value, label] of VOICES) {
     const option = document.createElement("option");
@@ -130,14 +130,7 @@ var POCKETREADER_BINARY_DOCUMENT_EXTENSIONS = new Set(["docx"]);
   openButton.addEventListener("click", async () => {
     panel.classList.toggle("open");
     if (panel.classList.contains("open")) {
-      showStatus("正在识别当前页面", "");
-      const capture = await captureConversationWithFiles();
-      latestCapture = capture;
-      titleInput.value = capture.title;
-      showStatus(
-        recognitionMessage(capture.messages, capture.files.length),
-        capture.messages.length || capture.files.length ? "" : "error"
-      );
+      await parseCurrentPage();
     }
   });
 
@@ -152,23 +145,19 @@ var POCKETREADER_BINARY_DOCUMENT_EXTENSIONS = new Set(["docx"]);
   });
 
   submitButton.addEventListener("click", async () => {
-    const capture = latestCapture || (await captureConversationWithFiles());
-    capture.title = titleInput.value.trim() || capture.title;
-    capture.voice = voiceSelect.value;
-    capture.reader_mode = readerModeSelect.value;
-    capture.split_by_turn = splitTurnsInput.checked;
-    capture.include_user_question = readerModeSelect.value !== "assistant";
-
-    if (!capture.messages.length && !capture.files.length) {
+    if (!latestSnapshotResult || !latestSnapshotResult.capture_id) {
+      await parseCurrentPage();
+    }
+    if (!latestSnapshotResult || !latestSnapshotResult.capture_id) {
       showStatus("没有识别到可导入的对话文本或文本文件。", "error");
       return;
     }
-    if (
-      capture.split_by_turn &&
-      capture.include_user_question &&
-      capture.messages.length &&
-      !hasBothConversationRoles(capture.messages)
-    ) {
+    if (!snapshotResultHasContent(latestSnapshotResult)) {
+      showStatus("没有识别到可导入的对话文本或文本文件。", "error");
+      return;
+    }
+    const summary = latestSnapshotResult.summary || {};
+    if (splitTurnsInput.checked && readerModeSelect.value !== "assistant" && !summary.has_user_messages) {
       showStatus("没有完整识别到问题和 AI 回复，已停止提交。请刷新页面后重试。", "error");
       return;
     }
@@ -178,8 +167,15 @@ var POCKETREADER_BINARY_DOCUMENT_EXTENSIONS = new Set(["docx"]);
     showStatus("正在提交到 PocketReader", "");
     try {
       const response = await sendRuntimeMessage({
-        type: "POCKETREADER_CAPTURE_SUBMIT",
-        payload: capture
+        type: "POCKETREADER_SNAPSHOT_CREATE",
+        payload: {
+          capture_id: latestSnapshotResult.capture_id,
+          title: titleInput.value.trim() || latestSnapshotResult.title,
+          voice: voiceSelect.value,
+          reader_mode: readerModeSelect.value,
+          split_by_turn: splitTurnsInput.checked,
+          include_user_question: readerModeSelect.value !== "assistant"
+        }
       });
       if (!response || !response.ok) {
         throw new Error(response && response.error ? response.error : "提交失败");
@@ -198,6 +194,31 @@ var POCKETREADER_BINARY_DOCUMENT_EXTENSIONS = new Set(["docx"]);
       submitButton.textContent = "提交导入";
     }
   });
+
+  async function parseCurrentPage() {
+    showStatus("正在把页面快照提交给服务器解析", "");
+    try {
+      const snapshot = await capturePageSnapshot();
+      const response = await sendRuntimeMessage({
+        type: "POCKETREADER_SNAPSHOT_PARSE",
+        payload: snapshot
+      });
+      if (!response || !response.ok) {
+        throw new Error(response && response.error ? response.error : "解析失败");
+      }
+      latestSnapshotResult = response.result || null;
+      if (latestSnapshotResult && latestSnapshotResult.title) {
+        titleInput.value = latestSnapshotResult.title;
+      } else {
+        titleInput.value = snapshot.title;
+      }
+      const state = snapshotResultHasContent(latestSnapshotResult) ? "" : "error";
+      showStatus(snapshotRecognitionMessage(latestSnapshotResult), state);
+    } catch (error) {
+      latestSnapshotResult = null;
+      showStatus(extensionErrorMessage(error), "error");
+    }
+  }
 
   function showStatus(message, state) {
     statusNode.textContent = message;
@@ -242,6 +263,239 @@ var POCKETREADER_BINARY_DOCUMENT_EXTENSIONS = new Set(["docx"]);
     return chrome.runtime.getURL(path);
   }
 })();
+
+async function capturePageSnapshot() {
+  const platform = platformFromHost(location.hostname);
+  const blocks = collectSnapshotBlocks(platform);
+  const files = await extractGeneratedFiles(platform, []);
+  const title = cleanTitle(document.title || "") || titleFromSnapshotBlocks(platform, blocks);
+  return {
+    platform,
+    url: location.href,
+    title,
+    extension_version: extensionVersion(),
+    snapshot: {
+      page: {
+        platform,
+        url: location.href,
+        host: location.hostname,
+        title: cleanTitle(document.title || "")
+      },
+      blocks,
+      files
+    }
+  };
+}
+
+function collectSnapshotBlocks(platform) {
+  const nodes = [];
+  const seen = new Set();
+  for (const selector of snapshotSelectors(platform)) {
+    for (const node of document.querySelectorAll(selector)) {
+      if (!isVisible(node) || seen.has(node)) {
+        continue;
+      }
+      seen.add(node);
+      nodes.push(node);
+    }
+  }
+
+  return nodes
+    .sort(compareDomNodeOrder)
+    .map((node, index) => snapshotBlockFromNode(node, platform, index))
+    .filter((block) => block.text.length >= 2);
+}
+
+function snapshotSelectors(platform) {
+  const commonFileSelectors = [
+    "a[download]",
+    "a[href]",
+    "[data-testid*='file' i]",
+    "[data-testid*='attachment' i]",
+    "[aria-label*='download' i]",
+    "[title*='download' i]"
+  ];
+  if (platform === "chatgpt") {
+    return [
+      "[data-message-author-role]",
+      "[data-testid*='user-message']",
+      "[data-testid*='assistant-message']",
+      ...commonFileSelectors
+    ];
+  }
+  if (platform === "gemini") {
+    return [
+      "user-query",
+      "[data-test-id='user-query']",
+      "[data-testid='user-query']",
+      ".query-text",
+      "model-response",
+      "[data-test-id='model-response']",
+      "[data-testid='model-response']",
+      ".model-response-text",
+      ".response-container",
+      "message-content",
+      ...commonFileSelectors
+    ];
+  }
+  if (platform === "claude") {
+    return [
+      "[data-testid='user-message']",
+      "[data-testid*='user-message']",
+      "[data-testid='assistant-message']",
+      "[data-testid*='assistant-message']",
+      ".font-user-message",
+      ".font-claude-message",
+      "[data-testid*='artifact' i]",
+      "[aria-label*='artifact' i]",
+      "[title*='artifact' i]",
+      "[class*='artifact' i]",
+      "[data-testid*='canvas' i]",
+      "[class*='canvas' i]",
+      ...commonFileSelectors
+    ];
+  }
+  return ["article", "main", ...commonFileSelectors];
+}
+
+function snapshotBlockFromNode(node, platform, index) {
+  const kindHint = kindHintFromNode(node);
+  const text =
+    kindHint === "artifact"
+      ? artifactBodyFromNode(node) || textFromNode(readableChild(node) || node)
+      : textFromNode(readableChild(node) || node);
+  return {
+    index,
+    tag: node.tagName ? node.tagName.toLowerCase() : "",
+    path: elementPath(node),
+    role_hint: roleHintFromNode(node, platform),
+    kind_hint: kindHint,
+    attrs: snapshotAttrs(node),
+    rect: snapshotRect(node),
+    text: cleanText(text).slice(0, POCKETREADER_MAX_FILE_TEXT_CHARS)
+  };
+}
+
+function roleHintFromNode(node, platform) {
+  const explicitRole = normalizeRole(node.getAttribute("data-message-author-role"));
+  if (explicitRole) {
+    return explicitRole;
+  }
+  const haystack = [
+    platform,
+    node.tagName || "",
+    node.getAttribute("data-testid") || "",
+    node.getAttribute("data-test-id") || "",
+    node.getAttribute("class") || "",
+    node.getAttribute("aria-label") || ""
+  ]
+    .join(" ")
+    .toLowerCase();
+  if (
+    haystack.includes("assistant-message") ||
+    haystack.includes("model-response") ||
+    haystack.includes("font-claude-message") ||
+    haystack.includes("message-content") ||
+    haystack.includes("response-container")
+  ) {
+    return "AI";
+  }
+  if (
+    haystack.includes("user-message") ||
+    haystack.includes("user-query") ||
+    haystack.includes("font-user-message") ||
+    haystack.includes("query-text")
+  ) {
+    return "User";
+  }
+  return "";
+}
+
+function kindHintFromNode(node) {
+  const haystack = [
+    node.getAttribute("data-testid") || "",
+    node.getAttribute("class") || "",
+    node.getAttribute("aria-label") || "",
+    node.getAttribute("title") || ""
+  ]
+    .join(" ")
+    .toLowerCase();
+  if (haystack.includes("artifact") || haystack.includes("canvas")) {
+    return "artifact";
+  }
+  if (fileNameFromNode(node) || /file|download|attachment/.test(haystack)) {
+    return "file";
+  }
+  return "message";
+}
+
+function snapshotAttrs(node) {
+  const attrs = {};
+  for (const name of [
+    "data-message-author-role",
+    "data-testid",
+    "data-test-id",
+    "class",
+    "aria-label",
+    "title",
+    "role",
+    "download",
+    "href"
+  ]) {
+    const value = name === "href" ? hrefFromNode(node) : node.getAttribute(name);
+    if (value) {
+      attrs[name] = String(value).slice(0, 500);
+    }
+  }
+  return attrs;
+}
+
+function snapshotRect(node) {
+  const rect = node.getBoundingClientRect();
+  return {
+    top: Math.round(rect.top),
+    left: Math.round(rect.left),
+    width: Math.round(rect.width),
+    height: Math.round(rect.height)
+  };
+}
+
+function elementPath(node) {
+  const parts = [];
+  let current = node;
+  while (current && current.nodeType === Node.ELEMENT_NODE && parts.length < 6) {
+    let part = current.tagName.toLowerCase();
+    const testId = current.getAttribute("data-testid");
+    if (testId) {
+      part += `[data-testid="${testId.slice(0, 80)}"]`;
+    } else if (current.id) {
+      part += `#${current.id.slice(0, 80)}`;
+    }
+    parts.unshift(part);
+    current = current.parentElement;
+  }
+  return parts.join(" > ");
+}
+
+function titleFromSnapshotBlocks(platform, blocks) {
+  const firstUser = blocks.find((block) => block.role_hint === "User");
+  const firstMessage = firstUser || blocks.find((block) => block.role_hint === "AI");
+  if (firstMessage && firstMessage.text) {
+    return firstMessage.text.split("\n")[0].slice(0, 80);
+  }
+  return `${platform} conversation`;
+}
+
+function extensionVersion() {
+  try {
+    if (isRuntimeAvailable() && typeof chrome.runtime.getManifest === "function") {
+      return chrome.runtime.getManifest().version || "";
+    }
+  } catch (_error) {
+    return "";
+  }
+  return "";
+}
 
 function captureConversation() {
   const platform = platformFromHost(location.hostname);
@@ -360,10 +614,14 @@ function addCandidate(candidates, role, node) {
 }
 
 function compareNodeOrder(a, b) {
-  if (a.node === b.node) {
+  return compareDomNodeOrder(a.node, b.node);
+}
+
+function compareDomNodeOrder(a, b) {
+  if (a === b) {
     return 0;
   }
-  return a.node.compareDocumentPosition(b.node) & Node.DOCUMENT_POSITION_PRECEDING ? 1 : -1;
+  return a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_PRECEDING ? 1 : -1;
 }
 
 function readableChild(node) {
@@ -993,6 +1251,33 @@ function recognitionMessage(messages, fileCount) {
     parts.push(`${fileCount} 个文本文件`);
   }
   return parts.join("，");
+}
+
+function snapshotRecognitionMessage(result) {
+  if (!result) {
+    return "服务器没有返回解析结果";
+  }
+  const summary = result.summary || {};
+  const messageCount = Number(summary.message_count || 0);
+  const turnCount = Number(summary.turn_count || 0);
+  const fileCount = Number(summary.file_count || 0);
+  const parts = [`服务器已识别 ${messageCount} 条消息`];
+  if (turnCount) {
+    parts.push(`${turnCount} 个回合`);
+  }
+  if (fileCount) {
+    parts.push(`${fileCount} 个文本文件`);
+  }
+  const warnings = Array.isArray(result.warnings) ? result.warnings : [];
+  if (warnings.length) {
+    parts.push(warnings.join("，"));
+  }
+  return parts.join("，");
+}
+
+function snapshotResultHasContent(result) {
+  const summary = (result && result.summary) || {};
+  return Boolean(Number(summary.message_count || 0) || Number(summary.file_count || 0));
 }
 
 function splitMessagesIntoTurns(messages) {

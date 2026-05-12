@@ -13,7 +13,7 @@ https://reader.example.com
 - 在电脑或手机网页里导入普通文本和 Markdown。
 - 一次上传多个 `.txt` / `.md` / `.markdown` 文件。
 - 导入公开 URL，并对部分 AI share link 做专门解析。
-- 通过 Chrome 扩展从已登录的 ChatGPT、Gemini、Claude 页面直接抓取当前对话。
+- 通过 Chrome 扩展从已登录的 ChatGPT、Gemini、Claude 页面采集当前对话快照，后端保存原始快照并解析。
 - Chrome 扩展可把 AI 多回合对话拆成“每个回合一个独立音频”，并在标题前加 `[1/9]` 这类顺序编号。
 - Chrome 扩展会把对话中可读取的 AI 生成文本文件、`.docx` 和带明确 Artifact 标记的 Claude Artifact 单独导入为音频条目，标题使用 `[文件]` 或 `[文件 1/2]` 前缀。
 - 在网页 UI 中选择多个 TTS 声音。
@@ -31,6 +31,7 @@ https://reader.example.com
 - ChatGPT share link 保持单条音频导入模式。
 - ChatGPT share link 保留后端解析能力。
 - Gemini / Claude 的 share 页面经常不把正文返回给服务器，更推荐使用 Chrome 扩展在浏览器里抓取已登录页面正文。
+- AI 页面导入采用“扩展采集、后端解析”：原始快照保存在 `browser_captures`，解析记录保存在 `browser_parse_runs`，方便后续调试和重新解析。
 - 扩展 reload 后必须刷新已经打开的 AI 页面；否则页面里残留的旧 content script 可能显示 `Extension context invalidated`。
 - 服务器保存 SQLite 数据库和 MP3 文件，目前没有自动清理策略。
 - 生产服务器上还运行着 `sibling.example.com`，PocketReader 必须与它隔离部署。

@@ -75,10 +75,33 @@ class Database:
                     created_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS browser_captures (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    platform TEXT NOT NULL,
+                    source_url TEXT,
+                    page_title TEXT,
+                    extension_version TEXT,
+                    raw_snapshot_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS browser_parse_runs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    capture_id INTEGER NOT NULL REFERENCES browser_captures(id) ON DELETE CASCADE,
+                    parser_version TEXT NOT NULL,
+                    result_json TEXT NOT NULL,
+                    error TEXT,
+                    created_at TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_items_status_created
                     ON items(status, created_at);
                 CREATE INDEX IF NOT EXISTS idx_events_item_created
                     ON listen_events(item_id, created_at);
+                CREATE INDEX IF NOT EXISTS idx_browser_captures_created
+                    ON browser_captures(created_at);
+                CREATE INDEX IF NOT EXISTS idx_browser_parse_runs_capture_created
+                    ON browser_parse_runs(capture_id, created_at);
                 """
             )
 
@@ -373,9 +396,79 @@ class Database:
                     ORDER BY created_at DESC, id DESC
                     LIMIT 1
                     """,
-                    (item_id,),
-                ).fetchone()
+                (item_id,),
+            ).fetchone()
             return int(next_item["id"]) if next_item is not None else None
+
+    def create_browser_capture(
+        self,
+        *,
+        platform: str,
+        source_url: str | None,
+        page_title: str | None,
+        extension_version: str | None,
+        raw_snapshot_json: str,
+    ) -> int:
+        now = utc_now()
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO browser_captures (
+                    platform, source_url, page_title, extension_version,
+                    raw_snapshot_json, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    platform,
+                    source_url,
+                    page_title,
+                    extension_version,
+                    raw_snapshot_json,
+                    now,
+                ),
+            )
+            return int(cursor.lastrowid)
+
+    def create_browser_parse_run(
+        self,
+        *,
+        capture_id: int,
+        parser_version: str,
+        result_json: str,
+        error: str | None = None,
+    ) -> int:
+        now = utc_now()
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO browser_parse_runs (
+                    capture_id, parser_version, result_json, error, created_at
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (capture_id, parser_version, result_json, error, now),
+            )
+            return int(cursor.lastrowid)
+
+    def get_browser_capture(self, capture_id: int) -> sqlite3.Row | None:
+        with self.connect() as conn:
+            return conn.execute(
+                "SELECT * FROM browser_captures WHERE id = ?",
+                (capture_id,),
+            ).fetchone()
+
+    def latest_browser_parse_run(self, capture_id: int) -> sqlite3.Row | None:
+        with self.connect() as conn:
+            return conn.execute(
+                """
+                SELECT * FROM browser_parse_runs
+                WHERE capture_id = ?
+                ORDER BY created_at DESC, id DESC
+                LIMIT 1
+                """,
+                (capture_id,),
+            ).fetchone()
 
 
 def derive_title(text: str) -> str:

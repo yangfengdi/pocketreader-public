@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import json
 import shutil
 import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
@@ -30,6 +31,7 @@ from pocketreader.auth import (
     require_user,
     set_session_cookie,
 )
+from pocketreader.browser_snapshot import PARSER_VERSION, parse_browser_snapshot
 from pocketreader.config import VOICE_OPTIONS, get_settings, voice_ids
 from pocketreader.db import Database, derive_title
 from pocketreader.importers import (
@@ -435,6 +437,179 @@ async def browser_capture(request: Request) -> dict[str, object]:
     return browser_capture_response(item_ids)
 
 
+@app.post("/api/browser-snapshot")
+async def browser_snapshot_parse(request: Request) -> dict[str, object]:
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Expected a JSON object.")
+    require_import_token(request, payload)
+
+    raw_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    parsed = parse_browser_snapshot(payload)
+    capture_id = db.create_browser_capture(
+        platform=normalize_capture_platform(parsed.get("platform")),
+        source_url=str(parsed.get("source_url") or "") or None,
+        page_title=str(parsed.get("title") or "") or None,
+        extension_version=str(payload.get("extension_version") or "") or None,
+        raw_snapshot_json=raw_json,
+    )
+    parse_run_id = db.create_browser_parse_run(
+        capture_id=capture_id,
+        parser_version=str(parsed.get("parser_version") or PARSER_VERSION),
+        result_json=json.dumps(parsed, ensure_ascii=False, separators=(",", ":")),
+    )
+    return browser_snapshot_response(capture_id, parse_run_id, parsed)
+
+
+@app.post("/api/browser-snapshot/{capture_id}/create")
+async def browser_snapshot_create(request: Request, capture_id: int) -> dict[str, object]:
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Expected a JSON object.")
+    require_import_token(request, payload)
+
+    capture = db.get_browser_capture(capture_id)
+    if capture is None:
+        raise HTTPException(status_code=404, detail="Browser capture was not found.")
+    try:
+        raw_payload = json.loads(str(capture["raw_snapshot_json"] or "{}"))
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=500, detail="Stored browser capture is invalid.") from exc
+
+    parsed = parse_browser_snapshot(raw_payload)
+    parse_run_id = db.create_browser_parse_run(
+        capture_id=capture_id,
+        parser_version=str(parsed.get("parser_version") or PARSER_VERSION),
+        result_json=json.dumps(parsed, ensure_ascii=False, separators=(",", ":")),
+    )
+    voice = normalize_voice(str(payload.get("voice") or settings.default_voice))
+    reader_mode = normalize_reader_mode(str(payload.get("reader_mode") or "assistant"))
+    split_by_turn = parse_bool(payload.get("split_by_turn"), default=False)
+    include_user_question = parse_bool(payload.get("include_user_question"), default=True)
+    title_override = str(payload.get("title") or "").strip()
+    item_ids = create_browser_items_from_parsed(
+        parsed,
+        title_override=title_override,
+        voice=voice,
+        reader_mode=reader_mode,
+        split_by_turn=split_by_turn,
+        include_user_question=include_user_question,
+    )
+    response = browser_capture_response(item_ids)
+    response["capture_id"] = capture_id
+    response["parse_run_id"] = parse_run_id
+    return response
+
+
+def create_browser_items_from_parsed(
+    parsed: dict[str, Any],
+    *,
+    title_override: str,
+    voice: str,
+    reader_mode: str,
+    split_by_turn: bool,
+    include_user_question: bool,
+) -> list[int]:
+    platform = normalize_capture_platform(parsed.get("platform"))
+    source_url = str(parsed.get("source_url") or "").strip()
+    title = title_override or str(parsed.get("title") or "").strip()
+    messages = parsed.get("messages")
+    files = parsed.get("files")
+    captured_file_ids = create_captured_file_items(
+        files,
+        platform=platform,
+        source_url=source_url,
+        voice=voice,
+        reader_mode=reader_mode,
+    )
+
+    if isinstance(messages, list) and split_by_turn:
+        if include_user_question and messages and not has_both_message_roles(messages):
+            raise HTTPException(
+                status_code=400,
+                detail="没有完整识别到问题和 AI 回复，已停止创建拆分音频。",
+            )
+        turns = split_messages_into_turns(messages)
+        if not turns and not captured_file_ids:
+            raise HTTPException(status_code=400, detail="No AI turns were found in captured content.")
+        turn_reader_mode = "all" if include_user_question else "assistant"
+        total = len(turns)
+        created_by_index: dict[int, int] = {}
+        for index, turn in reversed(list(enumerate(turns, start=1))):
+            turn_body = render_messages(turn, turn_reader_mode)
+            if not turn_body:
+                continue
+            item_id = db.create_item(
+                title=numbered_title(title or derive_title(turn_body), index, total),
+                body=turn_body,
+                source_type=f"browser:{platform}:turn",
+                source_url=source_url or None,
+                voice=voice,
+                reader_mode=turn_reader_mode,
+            )
+            created_by_index[index] = item_id
+        ordered_ids = [created_by_index[index] for index in sorted(created_by_index)]
+        if not ordered_ids and not captured_file_ids:
+            raise HTTPException(status_code=400, detail="Captured content is empty.")
+        return ordered_ids + captured_file_ids
+
+    item_ids: list[int] = []
+    if isinstance(messages, list) and messages:
+        imported = import_messages(messages, reader_mode, title or None)
+        if imported.body:
+            item_id = db.create_item(
+                title=imported.title or derive_title(imported.body),
+                body=imported.body,
+                source_type=f"browser:{platform}",
+                source_url=source_url or None,
+                voice=voice,
+                reader_mode=reader_mode,
+            )
+            item_ids.append(item_id)
+
+    item_ids.extend(captured_file_ids)
+    if not item_ids:
+        raise HTTPException(status_code=400, detail="Captured content is empty.")
+    return item_ids
+
+
+def browser_snapshot_response(
+    capture_id: int,
+    parse_run_id: int,
+    parsed: dict[str, Any],
+) -> dict[str, object]:
+    message_previews = [
+        {"role": message.get("role"), "text": str(message.get("text") or "")[:120]}
+        for message in parsed.get("messages", [])
+        if isinstance(message, dict)
+    ]
+    file_previews = [
+        {
+            "title": file.get("title"),
+            "filename": file.get("filename"),
+        }
+        for file in parsed.get("files", [])
+        if isinstance(file, dict)
+    ]
+    return {
+        "status": "ok",
+        "capture_id": capture_id,
+        "parse_run_id": parse_run_id,
+        "parser_version": parsed.get("parser_version"),
+        "title": parsed.get("title"),
+        "summary": {
+            "message_count": parsed.get("message_count", 0),
+            "turn_count": parsed.get("turn_count", 0),
+            "file_count": parsed.get("file_count", 0),
+            "has_user_messages": parsed.get("has_user_messages", False),
+            "has_ai_messages": parsed.get("has_ai_messages", False),
+        },
+        "warnings": parsed.get("warnings", []),
+        "messages": message_previews,
+        "files": file_previews,
+    }
+
+
 def create_captured_file_items(
     raw_files: object,
     *,
@@ -468,6 +643,17 @@ def create_captured_file_items(
         )
         created_by_index[index] = item_id
     return [created_by_index[index] for index in sorted(created_by_index)]
+
+
+def has_both_message_roles(messages: list[Any]) -> bool:
+    roles = set()
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        role = str(message.get("role") or "")
+        if role in {"User", "AI"}:
+            roles.add(role)
+    return {"User", "AI"}.issubset(roles)
 
 
 def browser_capture_response(item_ids: list[int]) -> dict[str, object]:

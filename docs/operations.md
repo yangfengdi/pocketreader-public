@@ -74,7 +74,8 @@ docker compose up -d
 `IMPORT_TOKEN` 只用于 Chrome 扩展导入：
 
 ```text
-POST /api/browser-capture
+POST /api/browser-snapshot
+POST /api/browser-snapshot/<capture_id>/create
 X-PocketReader-Import-Token: <IMPORT_TOKEN>
 ```
 
@@ -219,6 +220,8 @@ PocketReader 地址
 IMPORT_TOKEN
 ```
 
+扩展面板打开后会先把当前页面快照提交到后端解析。后端会保存原始快照到 `browser_captures`，并把解析结果写入 `browser_parse_runs`。面板状态里会显示消息数、回合数、文件数和 warnings。
+
 扩展面板可选择：
 
 - 朗读范围：默认“问题和 AI 回复”，也可改成“只读 AI 回复”。
@@ -227,6 +230,13 @@ IMPORT_TOKEN
 按回合拆分只适用于扩展直接抓取 ChatGPT / Gemini / Claude 当前页面。通过 PocketReader 网页粘贴 ChatGPT share link 的导入流程保持单条音频模式。
 
 如果 AI 回复里包含可读取的 AI 生成文件，扩展会把每个文件单独提交给后端，后端为每个文件创建独立音频条目。当前主要支持文本类文件、`.docx` 和带明确 DOM 标记的 Claude Artifact。不要用“右侧大块文本”兜底猜测文件；如果 Claude 没有暴露明确 Artifact DOM，应优先增加手动导入入口。
+
+调试扩展导入问题时：
+
+1. 先在网页面板看 `服务器已识别 X 条消息，Y 个回合，Z 个文本文件`。
+2. 如果识别数量明显不对，到服务器查 `browser_captures.raw_snapshot_json`。
+3. `blocks` 为空时，改扩展的 `snapshotSelectors`。
+4. `blocks` 有内容但解析错时，改后端的 `pocketreader/browser_snapshot.py`。
 
 修改扩展代码后：
 
@@ -287,8 +297,10 @@ node tests/browser_extension_capture.test.js
 
 - ChatGPT share link 解析 fixture。
 - Chrome 扩展 payload 导入。
+- Chrome 扩展 snapshot 保存、后端解析、按回合创建。
 - Chrome 扩展纯逻辑测试：回合拆分、单边消息告警、重复片段去重。
 - `/api/browser-capture` token 鉴权。
+- `/api/browser-snapshot` token 鉴权和 Claude 解析回归。
 - 音频 `HEAD` 支持。
 - Podcast feed 兼容元数据。
 - 中断 job 恢复。
