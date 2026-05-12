@@ -232,6 +232,7 @@ Claude DOM 最容易变化，规则要保守。
 
 - User: `[data-testid='user-message']`、`[data-testid*='user-message']`、`.font-user-message`
 - AI: `[data-testid='assistant-message']`、`[data-testid*='assistant-message']`、`.font-claude-message`
+- AI fallback：如果明确 AI selector 没有覆盖当前 Claude 版本，扩展会在 `main` 对话区域内采集可见的 `p`、`li`、标题、代码块等正文节点，并排除 user message、nav、aside、composer、PocketReader 面板和常见 UI 文案；这些 fallback 节点只作为 `AI` 候选提交给后端。
 - 文件/Artifact：明确包含 `artifact`、`canvas`、`file`、`attachment`、`download` 的节点。
 
 禁止：
@@ -241,6 +242,8 @@ Claude DOM 最容易变化，规则要保守。
 - 不要用“右侧面板大块文本”当文件 fallback。
 
 如果 Claude 页面出现“识别 0 条消息”，优先检查保存到 `browser_captures.raw_snapshot_json` 的 blocks 是否为空。如果 blocks 有内容但解析为空，改后端 `pocketreader/browser_snapshot.py`；如果 blocks 本身为空，再改扩展 selector。
+
+如果 Claude 页面只识别到 User、没有 AI，通常说明当前 Claude 版本的 AI 回复没有暴露 `assistant-message` 或 `.font-claude-message`。这时应优先维护 `content-script.js` 里的 `addClaudeFallbackTextNodes()`，但仍要限制在 `main` 区域，并继续排除 user message 和 UI 区域。
 
 ## AI 生成文件规则
 

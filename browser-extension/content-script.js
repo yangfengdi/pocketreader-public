@@ -34,6 +34,7 @@ var POCKETREADER_TEXT_FILE_EXTENSIONS = new Set([
   "tex"
 ]);
 var POCKETREADER_BINARY_DOCUMENT_EXTENSIONS = new Set(["docx"]);
+var POCKETREADER_FORCED_ROLE_HINTS = new WeakMap();
 
 (function initPocketReaderCapture() {
   if (document.querySelector("#pocketreader-capture-root")) {
@@ -299,6 +300,9 @@ function collectSnapshotBlocks(platform) {
       nodes.push(node);
     }
   }
+  if (platform === "claude") {
+    addClaudeFallbackTextNodes(nodes, seen);
+  }
 
   return nodes
     .sort(compareDomNodeOrder)
@@ -308,12 +312,12 @@ function collectSnapshotBlocks(platform) {
 
 function snapshotSelectors(platform) {
   const commonFileSelectors = [
-    "a[download]",
-    "a[href]",
-    "[data-testid*='file' i]",
-    "[data-testid*='attachment' i]",
-    "[aria-label*='download' i]",
-    "[title*='download' i]"
+    "main a[download]",
+    "main a[href]",
+    "main [data-testid*='file' i]",
+    "main [data-testid*='attachment' i]",
+    "main [aria-label*='download' i]",
+    "main [title*='download' i]"
   ];
   if (platform === "chatgpt") {
     return [
@@ -358,6 +362,71 @@ function snapshotSelectors(platform) {
   return ["article", "main", ...commonFileSelectors];
 }
 
+function addClaudeFallbackTextNodes(nodes, seen) {
+  const root = document.querySelector("main") || document.body;
+  if (!root) {
+    return;
+  }
+  const selectors = [
+    "p",
+    "li",
+    "blockquote",
+    "pre",
+    "code",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "[class*='prose' i]",
+    "[class*='markdown' i]",
+    "[class*='leading-' i]",
+    "[class*='whitespace-pre-wrap' i]"
+  ].join(",");
+  for (const node of root.querySelectorAll(selectors)) {
+    if (seen.has(node) || !isClaudeAssistantFallbackNode(node)) {
+      continue;
+    }
+    POCKETREADER_FORCED_ROLE_HINTS.set(node, "AI");
+    seen.add(node);
+    nodes.push(node);
+  }
+}
+
+function isClaudeAssistantFallbackNode(node) {
+  if (!isVisible(node)) {
+    return false;
+  }
+  if (
+    node.closest(
+      [
+        "#pocketreader-capture-root",
+        "nav",
+        "aside",
+        "header",
+        "footer",
+        "form",
+        "textarea",
+        "[contenteditable='true']",
+        "[data-testid*='user-message' i]",
+        ".font-user-message",
+        "[aria-label='New chat']",
+        "[aria-label='Search']",
+        "[aria-label='Chats']"
+      ].join(",")
+    )
+  ) {
+    return false;
+  }
+  if (node.querySelector("[data-testid*='user-message' i], .font-user-message")) {
+    return false;
+  }
+  const text = cleanText(node.innerText || node.textContent || "");
+  if (text.length < 20 || isMostlyUiText(text) || text.includes("Claude is AI and can make mistakes")) {
+    return false;
+  }
+  return true;
+}
+
 function snapshotBlockFromNode(node, platform, index) {
   const kindHint = kindHintFromNode(node);
   const text =
@@ -368,7 +437,7 @@ function snapshotBlockFromNode(node, platform, index) {
     index,
     tag: node.tagName ? node.tagName.toLowerCase() : "",
     path: elementPath(node),
-    role_hint: roleHintFromNode(node, platform),
+    role_hint: POCKETREADER_FORCED_ROLE_HINTS.get(node) || roleHintFromNode(node, platform),
     kind_hint: kindHint,
     attrs: snapshotAttrs(node),
     rect: snapshotRect(node),

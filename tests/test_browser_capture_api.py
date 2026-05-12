@@ -301,6 +301,69 @@ class BrowserCaptureApiTests(unittest.TestCase):
         self.assertEqual(data["summary"]["turn_count"], 1)
         self.assertEqual(data["summary"]["file_count"], 0)
 
+    def test_browser_snapshot_coalesces_claude_fallback_answer_blocks(self) -> None:
+        client = TestClient(main.app)
+
+        parse_response = client.post(
+            "/api/browser-snapshot",
+            headers={"X-PocketReader-Import-Token": "import-token"},
+            json={
+                "platform": "claude",
+                "title": "Fallback Blocks",
+                "snapshot": {
+                    "blocks": [
+                        claude_block(0, "User", "问题一"),
+                        {
+                            "index": 1,
+                            "tag": "p",
+                            "role_hint": "AI",
+                            "kind_hint": "message",
+                            "attrs": {},
+                            "text": "回答一第一段",
+                        },
+                        {
+                            "index": 2,
+                            "tag": "p",
+                            "role_hint": "AI",
+                            "kind_hint": "message",
+                            "attrs": {},
+                            "text": "回答一第二段",
+                        },
+                        claude_block(3, "User", "问题二"),
+                        {
+                            "index": 4,
+                            "tag": "p",
+                            "role_hint": "AI",
+                            "kind_hint": "message",
+                            "attrs": {},
+                            "text": "回答二",
+                        },
+                    ]
+                },
+            },
+        )
+
+        self.assertEqual(parse_response.status_code, 200)
+        parsed = parse_response.json()
+        self.assertEqual(parsed["summary"]["message_count"], 4)
+        self.assertEqual(parsed["summary"]["turn_count"], 2)
+
+        create_response = client.post(
+            f"/api/browser-snapshot/{parsed['capture_id']}/create",
+            headers={"X-PocketReader-Import-Token": "import-token"},
+            json={
+                "reader_mode": "all",
+                "split_by_turn": True,
+                "include_user_question": True,
+            },
+        )
+
+        self.assertEqual(create_response.status_code, 200)
+        first = main.db.get_item(create_response.json()["item_ids"][0])
+        self.assertIsNotNone(first)
+        assert first is not None
+        self.assertEqual(first["body"], "User: 问题一\n\nAI: 回答一第一段\n\n回答一第二段")
+
     def test_browser_snapshot_create_rejects_split_when_questions_are_missing(self) -> None:
         client = TestClient(main.app)
 

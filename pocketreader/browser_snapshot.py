@@ -123,7 +123,7 @@ def parse_messages(platform: str, blocks: list[dict[str, Any]]) -> list[dict[str
             continue
         candidates.append({"role": role, "text": text, "index": int_value(block.get("index"), 0)})
 
-    candidates = dedupe_message_candidates(candidates)
+    candidates = coalesce_consecutive_messages(dedupe_message_candidates(candidates))
     return normalize_messages(candidates, dedupe=False)
 
 
@@ -301,6 +301,21 @@ def dedupe_message_candidates(candidates: list[dict[str, Any]]) -> list[dict[str
             continue
         deduped.append(candidate)
     return sorted(deduped, key=lambda item: int_value(item.get("index"), 0))
+
+
+def coalesce_consecutive_messages(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    coalesced: list[dict[str, Any]] = []
+    for candidate in sorted(candidates, key=lambda item: int_value(item.get("index"), 0)):
+        if coalesced and coalesced[-1]["role"] == candidate["role"]:
+            previous_text = str(coalesced[-1].get("text") or "")
+            current_text = str(candidate.get("text") or "")
+            if current_text and not text_contains_either(previous_text, current_text):
+                coalesced[-1]["text"] = normalize_text(f"{previous_text}\n\n{current_text}")
+            elif len(current_text) > len(previous_text):
+                coalesced[-1]["text"] = current_text
+            continue
+        coalesced.append(dict(candidate))
+    return coalesced
 
 
 def clean_message_text(value: object) -> str:
