@@ -4,9 +4,7 @@
   }
 
   if (document.querySelector(".needs-refresh")) {
-    window.setTimeout(function () {
-      window.location.reload();
-    }, 5000);
+    scheduleSoftRefresh();
   }
 
   document.querySelectorAll("[data-import-tabs]").forEach(function (tabs) {
@@ -143,5 +141,43 @@
         position: audio.currentTime || 0
       })
     }).catch(function () {});
+  }
+
+  function scheduleSoftRefresh() {
+    var lastInteractionAt = Date.now();
+    ["click", "input", "change", "focusin", "keydown", "touchstart"].forEach(function (eventName) {
+      document.addEventListener(eventName, function () {
+        lastInteractionAt = Date.now();
+      }, { passive: true });
+    });
+
+    window.setTimeout(function refreshWhenIdle() {
+      if (shouldDeferRefresh(lastInteractionAt)) {
+        window.setTimeout(refreshWhenIdle, 5000);
+        return;
+      }
+      window.location.reload();
+    }, 8000);
+  }
+
+  function shouldDeferRefresh(lastInteractionAt) {
+    if (document.hidden) {
+      return false;
+    }
+    if (Date.now() - lastInteractionAt < 30000) {
+      return true;
+    }
+    if (document.querySelector("details[open]")) {
+      return true;
+    }
+    var active = document.activeElement;
+    if (active && active.matches && active.matches("input, textarea, select, button, audio")) {
+      return true;
+    }
+    var activeAudio = document.querySelector("audio");
+    if (activeAudio && !activeAudio.paused) {
+      return true;
+    }
+    return false;
   }
 })();

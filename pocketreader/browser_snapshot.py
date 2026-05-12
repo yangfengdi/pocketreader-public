@@ -113,7 +113,7 @@ def snapshot_blocks(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
 def parse_messages(platform: str, blocks: list[dict[str, Any]]) -> list[dict[str, str]]:
     candidates: list[dict[str, Any]] = []
     for block in blocks:
-        if explicit_file_block(block):
+        if explicit_file_block(block) or hidden_accessibility_block(block):
             continue
         role = role_from_block(platform, block)
         if role is None:
@@ -278,6 +278,16 @@ def explicit_file_block(block: dict[str, Any]) -> bool:
     return ("artifact" in haystack or "canvas" in haystack) and any(
         prefix in haystack for prefix in ("data-testid=", "class=", "aria-label=", "title=")
     )
+
+
+def hidden_accessibility_block(block: dict[str, Any]) -> bool:
+    attrs = block.get("attrs") if isinstance(block.get("attrs"), dict) else {}
+    class_name = clean_string(attrs.get("class")).lower()
+    if "sr-only" in class_name or "screen-reader" in class_name:
+        return True
+    if clean_string(attrs.get("aria-hidden")).lower() == "true":
+        return True
+    return False
 
 
 def explicit_file_dict(raw_file: dict[str, Any]) -> bool:

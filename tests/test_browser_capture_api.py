@@ -364,6 +364,70 @@ class BrowserCaptureApiTests(unittest.TestCase):
         assert first is not None
         self.assertEqual(first["body"], "User: 问题一\n\nAI: 回答一第一段\n\n回答一第二段")
 
+    def test_browser_snapshot_ignores_claude_screen_reader_labels(self) -> None:
+        client = TestClient(main.app)
+
+        parse_response = client.post(
+            "/api/browser-snapshot",
+            headers={"X-PocketReader-Import-Token": "import-token"},
+            json={
+                "platform": "claude",
+                "title": "Screen Reader Labels",
+                "snapshot": {
+                    "blocks": [
+                        {
+                            "index": 0,
+                            "tag": "h2",
+                            "role_hint": "AI",
+                            "kind_hint": "message",
+                            "attrs": {"class": "sr-only"},
+                            "text": "You said: 问题一",
+                        },
+                        claude_block(1, "User", "问题一"),
+                        {
+                            "index": 2,
+                            "tag": "h2",
+                            "role_hint": "AI",
+                            "kind_hint": "message",
+                            "attrs": {"class": "sr-only"},
+                            "text": "Claude responded: 回答一",
+                        },
+                        {
+                            "index": 3,
+                            "tag": "p",
+                            "role_hint": "AI",
+                            "kind_hint": "message",
+                            "attrs": {},
+                            "text": "回答一",
+                        },
+                        claude_block(4, "User", "问题二"),
+                        {
+                            "index": 5,
+                            "tag": "p",
+                            "role_hint": "AI",
+                            "kind_hint": "message",
+                            "attrs": {},
+                            "text": "回答二",
+                        },
+                        claude_block(6, "User", "问题三"),
+                        {
+                            "index": 7,
+                            "tag": "p",
+                            "role_hint": "AI",
+                            "kind_hint": "message",
+                            "attrs": {},
+                            "text": "回答三",
+                        },
+                    ]
+                },
+            },
+        )
+
+        self.assertEqual(parse_response.status_code, 200)
+        parsed = parse_response.json()
+        self.assertEqual(parsed["summary"]["message_count"], 6)
+        self.assertEqual(parsed["summary"]["turn_count"], 3)
+
     def test_browser_snapshot_create_rejects_split_when_questions_are_missing(self) -> None:
         client = TestClient(main.app)
 

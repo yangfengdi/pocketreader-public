@@ -396,6 +396,10 @@ function isClaudeAssistantFallbackNode(node) {
   if (!isVisible(node)) {
     return false;
   }
+  const className = String(node.getAttribute("class") || "").toLowerCase();
+  if (className.includes("sr-only") || className.includes("screen-reader")) {
+    return false;
+  }
   if (
     node.closest(
       [
