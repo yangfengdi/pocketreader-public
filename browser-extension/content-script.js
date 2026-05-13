@@ -268,7 +268,7 @@ var POCKETREADER_FORCED_ROLE_HINTS = new WeakMap();
 async function capturePageSnapshot() {
   const platform = platformFromHost(location.hostname);
   const blocks = collectSnapshotBlocks(platform);
-  const files = await extractGeneratedFiles(platform, []);
+  const files = await extractGeneratedFiles(platform, messagesFromSnapshotBlocks(blocks));
   const title = cleanTitle(document.title || "") || titleFromSnapshotBlocks(platform, blocks);
   return {
     platform,
@@ -286,6 +286,15 @@ async function capturePageSnapshot() {
       files
     }
   };
+}
+
+function messagesFromSnapshotBlocks(blocks) {
+  return blocks
+    .filter((block) => block.kind_hint === "message" && normalizeRole(block.role_hint))
+    .map((block) => ({
+      role: normalizeRole(block.role_hint),
+      text: block.text
+    }));
 }
 
 function collectSnapshotBlocks(platform) {
@@ -398,6 +407,9 @@ function isClaudeAssistantFallbackNode(node) {
   }
   const className = String(node.getAttribute("class") || "").toLowerCase();
   if (className.includes("sr-only") || className.includes("screen-reader")) {
+    return false;
+  }
+  if (openDocumentRoot(node)) {
     return false;
   }
   if (
@@ -748,6 +760,7 @@ function collectGeneratedFileCandidates(platform, messages = []) {
   }
   if (platform === "claude") {
     addClaudeArtifactCandidates(candidates, messages);
+    addClaudeOpenDocumentCandidates(candidates, messages);
   }
   return candidates;
 }
@@ -885,6 +898,112 @@ function addClaudeArtifactCandidates(candidates, messages = []) {
       inline_body: body
     });
   }
+}
+
+function addClaudeOpenDocumentCandidates(candidates, messages = []) {
+  const contentNodes = Array.from(
+    document.querySelectorAll(
+      [
+        ".cm-content",
+        ".ProseMirror",
+        "[contenteditable='true']",
+        "textarea",
+        "pre",
+        "code",
+        "article"
+      ].join(",")
+    )
+  )
+    .filter(isVisible)
+    .sort(compareNodeDepth);
+
+  for (const contentNode of contentNodes) {
+    const root = openDocumentRoot(contentNode);
+    if (!root || !isVisible(root)) {
+      continue;
+    }
+    const body = artifactBodyFromNode(root);
+    if (!body || overlapsKnownMessages(body, messages)) {
+      continue;
+    }
+    const title = artifactTitleFromNode(root, body);
+    const key = `claude-open-document\n${title}\n${body.slice(0, 500)}`;
+    addInlineFileCandidate(candidates, {
+      key,
+      node: root,
+      title: title || "Claude Markdown",
+      filename: `${safeFilename(title || "claude-markdown")}.md`,
+      url: "",
+      inline_body: body
+    });
+  }
+}
+
+function openDocumentRoot(node) {
+  if (node.closest("[data-testid*='user-message' i], .font-user-message")) {
+    return null;
+  }
+  if (
+    node.closest(
+      [
+        "[data-testid*='assistant-message' i]",
+        ".font-claude-message",
+        ".font-claude-response",
+        ".standard-markdown",
+        ".progressive-markdown"
+      ].join(",")
+    )
+  ) {
+    return null;
+  }
+  const root =
+    node.closest(
+      [
+        "[data-testid*='artifact' i]",
+        "[class*='artifact' i]",
+        "[data-testid*='canvas' i]",
+        "[class*='canvas' i]",
+        "[class*='document' i]",
+        "[class*='preview' i]",
+        "[class*='editor' i]",
+        "[role='dialog']",
+        "aside"
+      ].join(",")
+    ) || node;
+  if (!hasOpenDocumentSignal(root, node)) {
+    return null;
+  }
+  return root;
+}
+
+function hasOpenDocumentSignal(root, contentNode) {
+  const attributes = [
+    root.getAttribute("data-testid"),
+    root.getAttribute("class"),
+    root.getAttribute("aria-label"),
+    root.getAttribute("title"),
+    contentNode.getAttribute("class"),
+    contentNode.getAttribute("aria-label"),
+    contentNode.getAttribute("title")
+  ]
+    .join(" ")
+    .toLowerCase();
+  if (/artifact|canvas|document|preview|editor|markdown|code|file/.test(attributes)) {
+    return true;
+  }
+  if (
+    root.querySelector(
+      ".cm-content, .ProseMirror, [contenteditable='true'], textarea, [role='tablist'], [data-testid*='toolbar' i], [class*='toolbar' i]"
+    )
+  ) {
+    return true;
+  }
+  const toolbarText = cleanText(
+    Array.from(root.querySelectorAll("button, [role='button'], [aria-label], [title]"))
+      .map((node) => node.getAttribute("aria-label") || node.getAttribute("title") || node.textContent || "")
+      .join("\n")
+  );
+  return /(copy|download|preview|code|markdown|复制|下载|预览|代码)/i.test(toolbarText);
 }
 
 function addInlineFileCandidate(candidates, candidate) {

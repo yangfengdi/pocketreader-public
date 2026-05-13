@@ -141,7 +141,7 @@ Payload 示例：
   "platform": "gemini",
   "url": "https://gemini.google.com/...",
   "title": "Conversation title",
-  "extension_version": "0.1.9",
+  "extension_version": "0.1.10",
   "snapshot": {
     "blocks": [
       {
@@ -213,6 +213,6 @@ Payload 示例：
 
 - 文本类文件：`.txt`、`.md`、`.csv`、`.json`、`.html`、`.py`、`.js`、`.ts`、`.css`、`.sql` 等。
 - 小型 `.docx` 文件：扩展下载后发给服务端，服务端用标准 docx XML 解析正文。
-- Claude Artifact：如果页面 DOM 中存在明确 Artifact 标记，扩展会把它当作 Markdown 文本文件提交。
+- Claude Artifact / 打开的文档面板：如果页面 DOM 中存在明确 Artifact 标记，或用户已经打开了带预览、编辑器、代码/Markdown 内容区的文档面板，扩展会把它当作 Markdown 文本文件提交。
 
 如果 AI 网站只暴露不可下载的内部 `sandbox:` 链接、Artifact 没有明确 DOM 标记，或文件是 PDF/图片/表格这类当前无法抽取正文的格式，扩展会跳过该文件。不要用“右侧大块文本”兜底猜测文件；这已经导致过普通回复被误判为文件。后续要支持更多格式，应在 `browser-extension/content-script.js` 的文件提取逻辑和 `pocketreader/importers.py` 的文件解析逻辑里扩展。

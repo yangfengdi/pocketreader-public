@@ -257,6 +257,10 @@ Claude DOM 最容易变化，规则要保守。
 2. 明确 Claude Artifact：
    - `data-testid` / `class` / `aria-label` / `title` 中包含 `artifact`
    - `data-testid` / `class` 中包含 `canvas`
+3. 已打开的 Claude 文档面板：
+   - 面板或内容区包含 `document`、`preview`、`editor`、`markdown`、`code` 等标记。
+   - 或存在 `.cm-content`、`.ProseMirror`、`contenteditable`、`textarea`、toolbar / tablist / copy / download 控件。
+   - 必须排除普通 Claude 回复区域，避免把聊天回复当成文件。
 
 支持格式：
 
