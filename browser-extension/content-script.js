@@ -910,7 +910,10 @@ function addClaudeOpenDocumentCandidates(candidates, messages = []) {
         "textarea",
         "pre",
         "code",
-        "article"
+        "article",
+        ".standard-markdown",
+        ".progressive-markdown",
+        "[class*='markdown' i]"
       ].join(",")
     )
   )
@@ -943,19 +946,6 @@ function openDocumentRoot(node) {
   if (node.closest("[data-testid*='user-message' i], .font-user-message")) {
     return null;
   }
-  if (
-    node.closest(
-      [
-        "[data-testid*='assistant-message' i]",
-        ".font-claude-message",
-        ".font-claude-response",
-        ".standard-markdown",
-        ".progressive-markdown"
-      ].join(",")
-    )
-  ) {
-    return null;
-  }
   const root =
     node.closest(
       [
@@ -966,14 +956,55 @@ function openDocumentRoot(node) {
         "[class*='document' i]",
         "[class*='preview' i]",
         "[class*='editor' i]",
+        "[class*='panel' i]",
+        "[class*='modal' i]",
+        "[class*='drawer' i]",
+        "[data-testid*='panel' i]",
+        "[data-testid*='modal' i]",
+        "[data-testid*='drawer' i]",
         "[role='dialog']",
         "aside"
       ].join(",")
     ) || node;
+  if (isPlainConversationMarkdown(node, root)) {
+    return null;
+  }
   if (!hasOpenDocumentSignal(root, node)) {
     return null;
   }
   return root;
+}
+
+function isPlainConversationMarkdown(node, root) {
+  const conversationNode = node.closest(
+    [
+      "[data-testid*='assistant-message' i]",
+      ".font-claude-message",
+      ".font-claude-response",
+      ".standard-markdown",
+      ".progressive-markdown"
+    ].join(",")
+  );
+  if (!conversationNode) {
+    return false;
+  }
+  if (root && root !== node && explicitDocumentRootSignal(root)) {
+    return false;
+  }
+  return Boolean(conversationNode.closest("main"));
+}
+
+function explicitDocumentRootSignal(root) {
+  const attributes = [
+    root.getAttribute("data-testid"),
+    root.getAttribute("class"),
+    root.getAttribute("aria-label"),
+    root.getAttribute("title"),
+    root.getAttribute("role")
+  ]
+    .join(" ")
+    .toLowerCase();
+  return /artifact|canvas|document|preview|editor|panel|modal|drawer|dialog/.test(attributes);
 }
 
 function hasOpenDocumentSignal(root, contentNode) {
@@ -988,7 +1019,7 @@ function hasOpenDocumentSignal(root, contentNode) {
   ]
     .join(" ")
     .toLowerCase();
-  if (/artifact|canvas|document|preview|editor|markdown|code|file/.test(attributes)) {
+  if (/artifact|canvas|document|preview|editor|panel|modal|drawer|markdown|code|file/.test(attributes)) {
     return true;
   }
   if (

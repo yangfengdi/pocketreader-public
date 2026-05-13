@@ -261,6 +261,7 @@ Claude DOM 最容易变化，规则要保守。
 3. 已打开的 Claude 文档面板：
    - 面板或内容区包含 `document`、`preview`、`editor`、`markdown`、`code` 等标记。
    - 或存在 `.cm-content`、`.ProseMirror`、`contenteditable`、`textarea`、toolbar / tablist / copy / download 控件。
+   - 如果 Claude 把文档正文渲染成 `.standard-markdown` 或 `.progressive-markdown`，扩展只允许在侧边面板、弹层、Artifact、Canvas、Document、Preview、Editor 等明确容器里采集，不能采集主对话区的普通 Markdown 回复。
    - 必须排除普通 Claude 回复区域，避免把聊天回复当成文件。
 4. Claude snapshot 后端兜底：
    - 如果快照里出现短的 `artifact` 标题块，例如 `Ai时代的家庭教育Document · MD`，且其后紧跟大型 Markdown 文档块，后端会创建 `Ai时代的家庭教育.md` 文件条目。
