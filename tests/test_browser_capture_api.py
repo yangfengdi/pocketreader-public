@@ -301,6 +301,103 @@ class BrowserCaptureApiTests(unittest.TestCase):
         self.assertEqual(data["summary"]["turn_count"], 1)
         self.assertEqual(data["summary"]["file_count"], 0)
 
+    def test_browser_snapshot_extracts_open_claude_artifact_document(self) -> None:
+        client = TestClient(main.app)
+        file_body = (
+            "AI 时代的家庭教育：7 件值得做的事，6 件不要做的事\n\n"
+            "我有个上高中的孩子。最近一两年我反复在想一个问题：AI 在以肉眼可见的速度变强，"
+            "他未来 5 到 10 年要进入的，是一个被 AI 重新塑造过的世界。\n\n"
+            "在 AI 时代，孩子真正稀缺的能力，不是会用 AI，而是在 AI 给的选项之外，"
+            "自己造出新选项的能力。\n\n"
+            "家庭教育所有的具体动作，都应该围绕这个核心展开。下面是我给自己定的清单："
+            "让他做结构需要自己造的事，让他承担真实代价，保护无聊和独处，让他在一个领域深下去。"
+            "不要替他规避所有困难，不要把答案当成教育，不要用焦虑管理孩子。"
+        ) * 2
+
+        parse_response = client.post(
+            "/api/browser-snapshot",
+            headers={"X-PocketReader-Import-Token": "import-token"},
+            json={
+                "platform": "claude",
+                "title": "Claude Artifact",
+                "snapshot": {
+                    "blocks": [
+                        claude_block(0, "User", "请整理成一篇文章"),
+                        claude_block(1, "AI", "我把它做成了一份 Markdown 文件，方便你直接复制使用。"),
+                        {
+                            "index": 2,
+                            "tag": "div",
+                            "kind_hint": "artifact",
+                            "attrs": {"class": "group/artifact-block"},
+                            "text": "Ai时代的家庭教育Document · MD",
+                        },
+                        {
+                            "index": 3,
+                            "tag": "div",
+                            "kind_hint": "artifact",
+                            "attrs": {"class": "artifact-block-cell"},
+                            "text": "Ai时代的家庭教育Document · MD",
+                        },
+                        {
+                            "index": 4,
+                            "tag": "div",
+                            "role_hint": "AI",
+                            "kind_hint": "message",
+                            "attrs": {"class": "mx-auto w-full max-w-3xl leading-[1.65rem]"},
+                            "text": file_body,
+                        },
+                        {
+                            "index": 5,
+                            "tag": "div",
+                            "role_hint": "AI",
+                            "kind_hint": "message",
+                            "attrs": {"class": "standard-markdown grid-cols-1 font-claude-response"},
+                            "text": file_body,
+                        },
+                        {
+                            "index": 6,
+                            "tag": "h1",
+                            "role_hint": "AI",
+                            "kind_hint": "message",
+                            "attrs": {"class": "text-text-100 font-bold"},
+                            "text": "AI 时代的家庭教育：7 件值得做的事，6 件不要做的事",
+                        },
+                    ]
+                },
+            },
+        )
+
+        self.assertEqual(parse_response.status_code, 200)
+        parsed = parse_response.json()
+        self.assertEqual(parsed["summary"]["message_count"], 2)
+        self.assertEqual(parsed["summary"]["turn_count"], 1)
+        self.assertEqual(parsed["summary"]["file_count"], 1)
+        self.assertEqual(parsed["files"][0]["filename"], "Ai时代的家庭教育.md")
+
+        create_response = client.post(
+            f"/api/browser-snapshot/{parsed['capture_id']}/create",
+            headers={"X-PocketReader-Import-Token": "import-token"},
+            json={
+                "reader_mode": "all",
+                "split_by_turn": True,
+                "include_user_question": True,
+            },
+        )
+
+        self.assertEqual(create_response.status_code, 200)
+        data = create_response.json()
+        self.assertEqual(data["count"], 2)
+        turn = main.db.get_item(data["item_ids"][0])
+        file_item = main.db.get_item(data["item_ids"][1])
+        self.assertIsNotNone(turn)
+        self.assertIsNotNone(file_item)
+        assert turn is not None
+        assert file_item is not None
+        self.assertEqual(turn["body"], "User: 请整理成一篇文章\n\nAI: 我把它做成了一份 Markdown 文件，方便你直接复制使用。")
+        self.assertEqual(file_item["title"], "[文件] Ai时代的家庭教育")
+        self.assertIn("AI 时代的家庭教育", file_item["body"])
+        self.assertEqual(file_item["source_type"], "browser:claude:file")
+
     def test_browser_snapshot_coalesces_claude_fallback_answer_blocks(self) -> None:
         client = TestClient(main.app)
 

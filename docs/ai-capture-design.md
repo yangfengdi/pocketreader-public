@@ -111,7 +111,7 @@ payload 结构：
 {
   "capture_id": 123,
   "parse_run_id": 456,
-  "parser_version": "2026-05-12.1",
+  "parser_version": "2026-05-13.1",
   "title": "页面标题",
   "summary": {
     "message_count": 6,
@@ -165,6 +165,7 @@ payload：
 4. 禁止用“右侧大块文本”“文本很长”“看起来像文章”推断文件。
 5. 同一 role 的父节点和子节点重复时，只保留更完整的一份。
 6. 只有同时识别到 User 和 AI，才认为完整识别问答双方。
+7. Claude 打开的 Artifact 文档有时不会进入 `snapshot.files`，而是以普通 `message` block 混在快照里。后端应识别“artifact 标题块 + 后续完整文档内容块”的结构，把它提升为文件，并把该文档内容块及其子段落从普通对话消息中排除。
 
 ## 回合拆分规则
 
@@ -261,6 +262,10 @@ Claude DOM 最容易变化，规则要保守。
    - 面板或内容区包含 `document`、`preview`、`editor`、`markdown`、`code` 等标记。
    - 或存在 `.cm-content`、`.ProseMirror`、`contenteditable`、`textarea`、toolbar / tablist / copy / download 控件。
    - 必须排除普通 Claude 回复区域，避免把聊天回复当成文件。
+4. Claude snapshot 后端兜底：
+   - 如果快照里出现短的 `artifact` 标题块，例如 `Ai时代的家庭教育Document · MD`，且其后紧跟大型 Markdown 文档块，后端会创建 `Ai时代的家庭教育.md` 文件条目。
+   - 同一文档的重复父节点和子段落只保留最长正文。
+   - 被提升为文件的文档正文块会从普通对话消息中排除，避免同一篇文章在“对话音频”和“文件音频”里重复朗读。
 
 支持格式：
 

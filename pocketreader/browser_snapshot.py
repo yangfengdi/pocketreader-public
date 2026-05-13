@@ -7,7 +7,7 @@ from pocketreader.importers import normalize_message_role, normalize_messages, s
 from pocketreader.text import normalize_text
 
 
-PARSER_VERSION = "2026-05-12.1"
+PARSER_VERSION = "2026-05-13.1"
 MAX_TEXT_CHARS = 300_000
 TEXT_FILE_EXTENSIONS = {
     "txt",
@@ -58,8 +58,9 @@ def parse_browser_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
     )
 
     blocks = snapshot_blocks(snapshot)
-    messages = parse_messages(platform, blocks)
-    files = parse_files(snapshot, blocks)
+    inferred_files, file_block_indexes = infer_file_blocks(platform, blocks)
+    messages = parse_messages(platform, blocks, excluded_indexes=file_block_indexes)
+    files = parse_files(snapshot, blocks, inferred_files=inferred_files)
     turns = split_messages_into_turns(messages)
     warnings: list[str] = []
 
@@ -110,9 +111,17 @@ def snapshot_blocks(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     return sorted(blocks, key=lambda block: int_value(block.get("index"), 0))
 
 
-def parse_messages(platform: str, blocks: list[dict[str, Any]]) -> list[dict[str, str]]:
+def parse_messages(
+    platform: str,
+    blocks: list[dict[str, Any]],
+    *,
+    excluded_indexes: set[int] | None = None,
+) -> list[dict[str, str]]:
+    excluded_indexes = excluded_indexes or set()
     candidates: list[dict[str, Any]] = []
     for block in blocks:
+        if int_value(block.get("index"), 0) in excluded_indexes:
+            continue
         if explicit_file_block(block) or hidden_accessibility_block(block):
             continue
         role = role_from_block(platform, block)
@@ -127,7 +136,12 @@ def parse_messages(platform: str, blocks: list[dict[str, Any]]) -> list[dict[str
     return normalize_messages(candidates, dedupe=False)
 
 
-def parse_files(snapshot: dict[str, Any], blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def parse_files(
+    snapshot: dict[str, Any],
+    blocks: list[dict[str, Any]],
+    *,
+    inferred_files: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     files: list[dict[str, Any]] = []
     for raw_file in snapshot_files(snapshot):
         file_payload = normalize_file_payload(raw_file)
@@ -138,7 +152,139 @@ def parse_files(snapshot: dict[str, Any], blocks: list[dict[str, Any]]) -> list[
         file_payload = file_payload_from_block(block)
         if file_payload:
             add_file(files, file_payload)
+    for file_payload in inferred_files or []:
+        add_file(files, file_payload)
     return files
+
+
+def infer_file_blocks(platform: str, blocks: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], set[int]]:
+    if platform != "claude":
+        return [], set()
+    return infer_claude_open_document_files(blocks)
+
+
+def infer_claude_open_document_files(blocks: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], set[int]]:
+    files: list[dict[str, Any]] = []
+    excluded_indexes: set[int] = set()
+    ordered_blocks = sorted(blocks, key=lambda block: int_value(block.get("index"), 0))
+
+    for anchor in ordered_blocks:
+        if clean_string(anchor.get("kind_hint")).lower() != "artifact":
+            continue
+        title = clean_claude_artifact_title(anchor.get("text"))
+        if not title:
+            continue
+        candidate = claude_document_body_after_anchor(anchor, ordered_blocks)
+        if candidate is None:
+            continue
+
+        body = normalize_text(str(candidate.get("text") or ""))[:MAX_TEXT_CHARS]
+        if len(body) < 400:
+            continue
+        filename = f"{safe_filename(title)}.md"
+        add_file(
+            files,
+            {
+                "title": title,
+                "filename": filename,
+                "body": body,
+            },
+        )
+        excluded_indexes.update(
+            claude_document_block_indexes(
+                anchor_index=int_value(anchor.get("index"), 0),
+                body=body,
+                blocks=ordered_blocks,
+            )
+        )
+    return files, excluded_indexes
+
+
+def claude_document_body_after_anchor(
+    anchor: dict[str, Any],
+    blocks: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    anchor_index = int_value(anchor.get("index"), 0)
+    candidates: list[dict[str, Any]] = []
+    for block in blocks:
+        block_index = int_value(block.get("index"), 0)
+        if block_index <= anchor_index:
+            continue
+        if block_index - anchor_index > 60:
+            break
+        if normalize_message_role(block.get("role_hint")) == "User":
+            break
+        if clean_string(block.get("kind_hint")).lower() == "artifact":
+            continue
+        if hidden_accessibility_block(block):
+            continue
+        if role_from_block("claude", block) != "AI":
+            continue
+        text = normalize_text(str(block.get("text") or ""))
+        if len(text) < 400:
+            continue
+        if not looks_like_claude_document_body(block):
+            continue
+        candidates.append(block)
+    if not candidates:
+        return None
+    return max(candidates, key=lambda block: len(str(block.get("text") or "")))
+
+
+def looks_like_claude_document_body(block: dict[str, Any]) -> bool:
+    attrs = block.get("attrs") if isinstance(block.get("attrs"), dict) else {}
+    class_name = clean_string(attrs.get("class")).lower()
+    tag = clean_string(block.get("tag")).lower()
+    if tag in {"article", "main", "textarea", "pre", "code"}:
+        return True
+    return any(
+        marker in class_name
+        for marker in (
+            "standard-markdown",
+            "prosemirror",
+            "cm-content",
+            "max-w-3xl",
+            "artifact",
+            "document",
+            "preview",
+            "editor",
+        )
+    )
+
+
+def claude_document_block_indexes(
+    *,
+    anchor_index: int,
+    body: str,
+    blocks: list[dict[str, Any]],
+) -> set[int]:
+    body_text = comparable_text(body)
+    excluded: set[int] = set()
+    for block in blocks:
+        block_index = int_value(block.get("index"), 0)
+        if block_index <= anchor_index:
+            continue
+        if block_index - anchor_index > 90:
+            break
+        if normalize_message_role(block.get("role_hint")) == "User":
+            break
+        if role_from_block("claude", block) != "AI":
+            continue
+        text = comparable_text(str(block.get("text") or ""))
+        if len(text) >= 20 and text in body_text:
+            excluded.add(block_index)
+    return excluded
+
+
+def clean_claude_artifact_title(value: object) -> str:
+    title = clean_string(value)
+    for marker in ("Document", "Markdown", "Code", "Text", "文件", "文档", "·", "•"):
+        title = title.replace(marker, " ")
+    title = re.sub(r"\b(md|txt|csv|json|yaml|yml|xml|html|py|js|ts|tsx|jsx|css)\b", " ", title, flags=re.I)
+    title = re.sub(r"\s+", " ", title).strip()
+    if not title or mostly_ui_text(title):
+        return ""
+    return title[:120]
 
 
 def snapshot_files(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
