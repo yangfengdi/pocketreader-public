@@ -16,6 +16,11 @@ const context = {
     querySelector(selector) {
       return selector === "#pocketreader-capture-root" ? {} : null;
     }
+  },
+  window: {
+    getComputedStyle() {
+      return { visibility: "visible", display: "block" };
+    }
   }
 };
 vm.createContext(context);
@@ -97,3 +102,34 @@ test("streaming guards identify active generation signals", () => {
   assert.strictEqual(context.isStopGenerationLabel("停止生成"), true);
   assert.strictEqual(context.isStopGenerationLabel("Copy response"), false);
 });
+
+test("Claude collapsed user previews are not treated as assistant fallback", () => {
+  const preview = fakeNode({
+    className: "flex-1 min-w-0 overflow-hidden text-[8px] text-text-500/80 break-all line-clamp-[6]",
+    text: "关于辩证法，听你刚才讲完，我开始形成了一些直觉，想请你帮我整理成一篇文章，并对我的这些看法做出评价。",
+    width: 99,
+    height: 72
+  });
+
+  assert.strictEqual(context.isClaudeCollapsedUserPreviewNode(preview), true);
+  assert.strictEqual(context.isClaudeAssistantFallbackNode(preview), false);
+});
+
+function fakeNode({ className = "", text = "", width = 100, height = 40, closestResult = null }) {
+  return {
+    innerText: text,
+    textContent: text,
+    getAttribute(name) {
+      return name === "class" ? className : "";
+    },
+    getBoundingClientRect() {
+      return { width, height };
+    },
+    closest() {
+      return closestResult;
+    },
+    querySelector() {
+      return null;
+    }
+  };
+}

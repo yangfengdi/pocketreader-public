@@ -7,7 +7,7 @@ from pocketreader.importers import normalize_message_role, normalize_messages, s
 from pocketreader.text import normalize_text
 
 
-PARSER_VERSION = "2026-05-13.1"
+PARSER_VERSION = "2026-05-15.1"
 MAX_TEXT_CHARS = 300_000
 TEXT_FILE_EXTENSIONS = {
     "txt",
@@ -365,6 +365,9 @@ def add_file(files: list[dict[str, Any]], candidate: dict[str, Any]) -> None:
 
 
 def role_from_block(platform: str, block: dict[str, Any]) -> str | None:
+    if platform == "claude" and claude_collapsed_user_preview_block(block):
+        return "User"
+
     role = normalize_message_role(block.get("role_hint"))
     if role:
         return role
@@ -412,6 +415,55 @@ def role_from_block(platform: str, block: dict[str, Any]) -> str | None:
     ):
         return "User"
     return None
+
+
+def claude_collapsed_user_preview_block(block: dict[str, Any]) -> bool:
+    attrs = block.get("attrs") if isinstance(block.get("attrs"), dict) else {}
+    class_name = clean_string(attrs.get("class")).lower()
+    if "line-clamp" not in class_name:
+        return False
+    if not any(marker in class_name for marker in ("text-[8px]", "break-all", "overflow-hidden", "min-w-0")):
+        return False
+
+    haystack = " ".join(
+        [
+            clean_string(attrs.get("data-testid")),
+            clean_string(attrs.get("class")),
+            clean_string(attrs.get("aria-label")),
+            clean_string(attrs.get("title")),
+            clean_string(block.get("path")),
+        ]
+    ).lower()
+    if any(
+        marker in haystack
+        for marker in (
+            "assistant-message",
+            "font-claude-message",
+            "artifact",
+            "canvas",
+            "pocketreader-capture-root",
+        )
+    ):
+        return False
+
+    rect = block.get("rect") if isinstance(block.get("rect"), dict) else {}
+    width = float_value(rect.get("width"), 0.0)
+    if width and width > 260:
+        return False
+
+    return looks_like_user_prompt_text(clean_string(block.get("text")))
+
+
+def looks_like_user_prompt_text(text: str) -> bool:
+    value = normalize_text(text)
+    if len(value) < 40 or mostly_ui_text(value):
+        return False
+    return bool(
+        re.search(
+            r"(请你|帮我|想请你|麻烦你|我想|我希望|我觉得|我认为|我感觉|我的看法|你可以|能不能|可不可以)",
+            value,
+        )
+    )
 
 
 def explicit_file_block(block: dict[str, Any]) -> bool:
@@ -606,6 +658,13 @@ def clean_string(value: object) -> str:
 def int_value(value: object, default: int) -> int:
     try:
         return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def float_value(value: object, default: float) -> float:
+    try:
+        return float(value)
     except (TypeError, ValueError):
         return default
 

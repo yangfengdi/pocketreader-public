@@ -461,6 +461,90 @@ class BrowserCaptureApiTests(unittest.TestCase):
         assert first is not None
         self.assertEqual(first["body"], "User: 问题一\n\nAI: 回答一第一段\n\n回答一第二段")
 
+    def test_browser_snapshot_treats_claude_collapsed_user_preview_as_user(self) -> None:
+        client = TestClient(main.app)
+
+        parse_response = client.post(
+            "/api/browser-snapshot",
+            headers={"X-PocketReader-Import-Token": "import-token"},
+            json={
+                "platform": "claude",
+                "title": "Collapsed User Preview",
+                "snapshot": {
+                    "blocks": [
+                        claude_block(0, "User", "问题一"),
+                        {
+                            "index": 1,
+                            "tag": "p",
+                            "role_hint": "AI",
+                            "kind_hint": "message",
+                            "attrs": {},
+                            "text": "回答一",
+                        },
+                        claude_block(2, "User", "问题二"),
+                        {
+                            "index": 3,
+                            "tag": "p",
+                            "role_hint": "AI",
+                            "kind_hint": "message",
+                            "attrs": {},
+                            "text": "回答二",
+                        },
+                        {
+                            "index": 4,
+                            "tag": "p",
+                            "role_hint": "AI",
+                            "kind_hint": "message",
+                            "attrs": {
+                                "class": "flex-1 min-w-0 overflow-hidden text-[8px] text-text-500/80 break-all line-clamp-[6]"
+                            },
+                            "rect": {"width": 99, "height": 72},
+                            "text": "关于辩证法，听你刚才讲完，我开始形成了一些直觉，想请你帮我整理成一篇文章，并对我的这些看法做出评价。",
+                        },
+                        {
+                            "index": 5,
+                            "tag": "p",
+                            "role_hint": "AI",
+                            "kind_hint": "message",
+                            "attrs": {"class": "font-claude-response-body"},
+                            "text": "下面我分两部分来做。",
+                        },
+                        {
+                            "index": 6,
+                            "tag": "p",
+                            "role_hint": "AI",
+                            "kind_hint": "message",
+                            "attrs": {"class": "font-claude-response-body"},
+                            "text": "回答三",
+                        },
+                    ]
+                },
+            },
+        )
+
+        self.assertEqual(parse_response.status_code, 200)
+        parsed = parse_response.json()
+        self.assertEqual(parsed["summary"]["message_count"], 6)
+        self.assertEqual(parsed["summary"]["turn_count"], 3)
+
+        create_response = client.post(
+            f"/api/browser-snapshot/{parsed['capture_id']}/create",
+            headers={"X-PocketReader-Import-Token": "import-token"},
+            json={
+                "reader_mode": "all",
+                "split_by_turn": True,
+                "include_user_question": True,
+            },
+        )
+
+        self.assertEqual(create_response.status_code, 200)
+        self.assertEqual(len(create_response.json()["item_ids"]), 3)
+        third = main.db.get_item(create_response.json()["item_ids"][2])
+        self.assertIsNotNone(third)
+        assert third is not None
+        self.assertTrue(third["body"].startswith("User: 关于辩证法"))
+        self.assertIn("AI: 下面我分两部分来做。", third["body"])
+
     def test_browser_snapshot_ignores_claude_screen_reader_labels(self) -> None:
         client = TestClient(main.app)
 

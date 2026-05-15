@@ -235,7 +235,8 @@ Claude DOM 最容易变化，规则要保守。
 
 - User: `[data-testid='user-message']`、`[data-testid*='user-message']`、`.font-user-message`
 - AI: `[data-testid='assistant-message']`、`[data-testid*='assistant-message']`、`.font-claude-message`
-- AI fallback：如果明确 AI selector 没有覆盖当前 Claude 版本，扩展会在 `main` 对话区域内采集可见的 `p`、`li`、标题、代码块等正文节点，并排除 user message、nav、aside、composer、PocketReader 面板和常见 UI 文案；这些 fallback 节点只作为 `AI` 候选提交给后端。
+- Claude 折叠用户消息：Claude 有时会把很长的用户问题显示成窄宽度、`line-clamp`、`text-[8px]` 的预览块，而不是标准 `user-message` 容器。扩展和后端都要把这类带明显提问语气的块识别成 `User`，否则会把下一条 AI 回复并入上一轮。
+- AI fallback：如果明确 AI selector 没有覆盖当前 Claude 版本，扩展会在 `main` 对话区域内采集可见的 `p`、`li`、标题、代码块等正文节点，并排除 user message、折叠用户消息、nav、aside、composer、PocketReader 面板和常见 UI 文案；这些 fallback 节点只作为 `AI` 候选提交给后端。
 - 文件/Artifact：明确包含 `artifact`、`canvas`、`file`、`attachment`、`download` 的节点。
 
 禁止：

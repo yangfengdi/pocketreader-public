@@ -436,7 +436,16 @@ function addClaudeFallbackTextNodes(nodes, seen) {
     "[class*='whitespace-pre-wrap' i]"
   ].join(",");
   for (const node of root.querySelectorAll(selectors)) {
-    if (seen.has(node) || !isClaudeAssistantFallbackNode(node)) {
+    if (seen.has(node) || !isVisible(node)) {
+      continue;
+    }
+    if (isClaudeCollapsedUserPreviewNode(node)) {
+      POCKETREADER_FORCED_ROLE_HINTS.set(node, "User");
+      seen.add(node);
+      nodes.push(node);
+      continue;
+    }
+    if (!isClaudeAssistantFallbackNode(node)) {
       continue;
     }
     POCKETREADER_FORCED_ROLE_HINTS.set(node, "AI");
@@ -445,8 +454,53 @@ function addClaudeFallbackTextNodes(nodes, seen) {
   }
 }
 
+function isClaudeCollapsedUserPreviewNode(node) {
+  if (!isVisible(node)) {
+    return false;
+  }
+  const className = String(node.getAttribute("class") || "").toLowerCase();
+  if (!className.includes("line-clamp")) {
+    return false;
+  }
+  if (!/(text-\[8px\]|break-all|overflow-hidden|min-w-0)/.test(className)) {
+    return false;
+  }
+  const rect = node.getBoundingClientRect();
+  if (rect.width && rect.width > 260) {
+    return false;
+  }
+  if (
+    typeof node.closest === "function" &&
+    node.closest(
+      [
+        "#pocketreader-capture-root",
+        "nav",
+        "aside",
+        "header",
+        "footer",
+        "form",
+        "textarea",
+        "[contenteditable='true']",
+        "[data-testid*='assistant-message' i]",
+        ".font-claude-message",
+        "[data-testid*='artifact' i]",
+        "[class*='artifact' i]",
+        "[data-testid*='canvas' i]",
+        "[class*='canvas' i]"
+      ].join(",")
+    )
+  ) {
+    return false;
+  }
+  const text = cleanText(node.innerText || node.textContent || "");
+  return looksLikeUserPromptText(text);
+}
+
 function isClaudeAssistantFallbackNode(node) {
   if (!isVisible(node)) {
+    return false;
+  }
+  if (isClaudeCollapsedUserPreviewNode(node)) {
     return false;
   }
   const className = String(node.getAttribute("class") || "").toLowerCase();
@@ -485,6 +539,14 @@ function isClaudeAssistantFallbackNode(node) {
     return false;
   }
   return true;
+}
+
+function looksLikeUserPromptText(text) {
+  const value = cleanText(text);
+  if (value.length < 40 || isMostlyUiText(value)) {
+    return false;
+  }
+  return /(请你|帮我|想请你|麻烦你|我想|我希望|我觉得|我认为|我感觉|我的看法|你可以|能不能|可不可以)/.test(value);
 }
 
 function snapshotBlockFromNode(node, platform, index) {

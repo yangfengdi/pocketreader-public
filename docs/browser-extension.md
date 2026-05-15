@@ -143,7 +143,7 @@ Payload 示例：
   "platform": "gemini",
   "url": "https://gemini.google.com/...",
   "title": "Conversation title",
-  "extension_version": "0.1.12",
+  "extension_version": "0.1.13",
   "snapshot": {
     "blocks": [
       {
