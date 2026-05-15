@@ -49,6 +49,8 @@ https://reader.example.com/extension
 3. 检查标题、朗读范围和声音。
 4. 点击“提交导入”。
 
+如果 AI 仍在生成回复，扩展会停止导入并提示“AI 仍在生成回复，请等生成完成后再导入”。不要在回答流式输出过程中导入，否则只能采集到当时页面上已经渲染出来的半截内容。
+
 扩展发送给服务器的数据包括：
 
 - 平台名。
@@ -141,7 +143,7 @@ Payload 示例：
   "platform": "gemini",
   "url": "https://gemini.google.com/...",
   "title": "Conversation title",
-  "extension_version": "0.1.11",
+  "extension_version": "0.1.12",
   "snapshot": {
     "blocks": [
       {

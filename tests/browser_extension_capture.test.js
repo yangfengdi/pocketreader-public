@@ -87,3 +87,13 @@ test("recognitionMessage warns when only one side was captured", () => {
 
   assert.ok(message.includes("未完整识别问答双方"));
 });
+
+test("streaming guards identify active generation signals", () => {
+  assert.strictEqual(context.isActiveStreamingValue("true"), true);
+  assert.strictEqual(context.isActiveStreamingValue("1"), true);
+  assert.strictEqual(context.isActiveStreamingValue("false"), false);
+  assert.strictEqual(context.isActiveStreamingValue("0"), false);
+  assert.strictEqual(context.isStopGenerationLabel("Stop generating"), true);
+  assert.strictEqual(context.isStopGenerationLabel("停止生成"), true);
+  assert.strictEqual(context.isStopGenerationLabel("Copy response"), false);
+});

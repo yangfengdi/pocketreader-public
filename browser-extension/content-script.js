@@ -267,6 +267,10 @@ var POCKETREADER_FORCED_ROLE_HINTS = new WeakMap();
 
 async function capturePageSnapshot() {
   const platform = platformFromHost(location.hostname);
+  const activeGeneration = activeGenerationSignal();
+  if (activeGeneration) {
+    throw new Error("AI 仍在生成回复，请等生成完成后再导入。");
+  }
   const blocks = collectSnapshotBlocks(platform);
   const files = await extractGeneratedFiles(platform, messagesFromSnapshotBlocks(blocks));
   const title = cleanTitle(document.title || "") || titleFromSnapshotBlocks(platform, blocks);
@@ -286,6 +290,46 @@ async function capturePageSnapshot() {
       files
     }
   };
+}
+
+function activeGenerationSignal() {
+  for (const node of document.querySelectorAll("[data-is-streaming]")) {
+    if (isVisible(node) && isActiveStreamingValue(node.getAttribute("data-is-streaming"))) {
+      return "streaming";
+    }
+  }
+  for (const node of document.querySelectorAll("button, [role='button'], [aria-label], [title]")) {
+    if (!isVisible(node)) {
+      continue;
+    }
+    const label = cleanText(
+      [
+        node.getAttribute("aria-label"),
+        node.getAttribute("title"),
+        node.textContent
+      ].join(" ")
+    );
+    if (isStopGenerationLabel(label)) {
+      return "stop-button";
+    }
+  }
+  return "";
+}
+
+function isActiveStreamingValue(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return Boolean(normalized && !["false", "0", "no", "off"].includes(normalized));
+}
+
+function isStopGenerationLabel(label) {
+  const normalized = String(label || "").replace(/\s+/g, " ").trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  return (
+    /stop (generating|response|responding|streaming)/i.test(normalized) ||
+    /(停止|中止|终止)(生成|回答|回复|响应)/.test(normalized)
+  );
 }
 
 function messagesFromSnapshotBlocks(blocks) {
