@@ -301,6 +301,37 @@ class BrowserCaptureApiTests(unittest.TestCase):
         self.assertEqual(data["summary"]["turn_count"], 1)
         self.assertEqual(data["summary"]["file_count"], 0)
 
+    def test_browser_snapshot_does_not_treat_claude_artifact_card_as_file_body(self) -> None:
+        client = TestClient(main.app)
+
+        response = client.post(
+            "/api/browser-snapshot",
+            headers={"X-PocketReader-Import-Token": "import-token"},
+            json={
+                "platform": "claude",
+                "title": "Claude Artifact Card",
+                "snapshot": {
+                    "blocks": [
+                        claude_block(0, "User", "请写一篇文章"),
+                        claude_block(1, "AI", "我创建了一个 Markdown 文档。"),
+                        {
+                            "index": 2,
+                            "tag": "div",
+                            "kind_hint": "artifact",
+                            "attrs": {"class": "group/artifact-block"},
+                            "text": "程序员的宗教改革 vibe coding现场的多面观察Document · MD",
+                        },
+                    ]
+                },
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["summary"]["message_count"], 2)
+        self.assertEqual(data["summary"]["turn_count"], 1)
+        self.assertEqual(data["summary"]["file_count"], 0)
+
     def test_browser_snapshot_extracts_open_claude_artifact_document(self) -> None:
         client = TestClient(main.app)
         file_body = (

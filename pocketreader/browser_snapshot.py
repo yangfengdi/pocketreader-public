@@ -7,7 +7,7 @@ from pocketreader.importers import normalize_message_role, normalize_messages, s
 from pocketreader.text import normalize_text
 
 
-PARSER_VERSION = "2026-05-15.1"
+PARSER_VERSION = "2026-05-17.1"
 MAX_TEXT_CHARS = 300_000
 TEXT_FILE_EXTENSIONS = {
     "txt",
@@ -287,6 +287,21 @@ def clean_claude_artifact_title(value: object) -> str:
     return title[:120]
 
 
+def looks_like_claude_artifact_card_text(value: object) -> bool:
+    text = normalize_text(str(value or ""))
+    if not text or "\n" in text:
+        return False
+    if len(text) > 140:
+        return False
+    return bool(
+        re.search(
+            r"(Document|Markdown|Code|Text|文档|文件)\s*(·|•)?\s*(MD|TXT|CSV|JSON|YAML|HTML|PY|JS|TS)?$",
+            text,
+            flags=re.I,
+        )
+    )
+
+
 def snapshot_files(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     raw_files = snapshot.get("files")
     if not isinstance(raw_files, list):
@@ -302,6 +317,8 @@ def normalize_file_payload(raw_file: dict[str, Any]) -> dict[str, Any] | None:
     url = clean_string(raw_file.get("url"))
 
     if not (body or data_base64):
+        return None
+    if body and looks_like_claude_artifact_card_text(body):
         return None
     if filename and not supported_filename(filename) and not explicit_file_dict(raw_file):
         return None
@@ -326,6 +343,11 @@ def file_payload_from_block(block: dict[str, Any]) -> dict[str, Any] | None:
         return None
     text = normalize_text(str(block.get("text") or ""))[:MAX_TEXT_CHARS]
     if len(text) < 40:
+        return None
+    if (
+        clean_string(block.get("kind_hint")).lower() == "artifact"
+        and looks_like_claude_artifact_card_text(text)
+    ):
         return None
     attrs = block_attrs_text(block)
     filename = match_filename(attrs) or match_filename(text)
