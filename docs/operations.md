@@ -241,7 +241,7 @@ IMPORT_TOKEN
 修改扩展代码后：
 
 1. 打开 `chrome://extensions/`。
-2. 找到 PocketReader Capture。
+2. 找到 PocketReader。
 3. 点击 reload。
 4. 刷新已经打开的 ChatGPT / Gemini / Claude 页面。
 

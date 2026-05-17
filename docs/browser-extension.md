@@ -1,6 +1,6 @@
 # Chrome 扩展说明
 
-PocketReader Capture 是一个本地加载的 Chrome extension。它在用户已经登录的 AI 网站页面里采集当前页面快照，然后提交给 PocketReader，由后端保存原始快照并解析为对话、回合和文件。
+PocketReader 是一个本地加载的 Chrome extension。它在用户已经登录的 AI 网站页面里采集当前页面快照，然后提交给 PocketReader，由后端保存原始快照并解析为对话、回合和文件。
 
 支持页面：
 
@@ -46,6 +46,7 @@ https://reader.example.com/extension
 
 1. 在 Chrome 中正常打开 ChatGPT、Gemini 或 Claude 对话页。
 2. 点击页面右下角的“导入 PocketReader”按钮。
+   也可以点击 Chrome 工具栏里的 PocketReader 图标打开同一个导入面板。
 3. 检查标题、朗读范围和声音。
 4. 点击“提交导入”。
 
@@ -80,7 +81,7 @@ POST /api/browser-snapshot/<capture_id>/create
 修改 `browser-extension/` 下文件后，Chrome 不会自动加载新代码。需要：
 
 1. 打开 `chrome://extensions/`。
-2. 找到 PocketReader Capture。
+2. 找到 PocketReader。
 3. 点击 reload。
 4. 刷新已打开的 ChatGPT / Gemini / Claude 页面。
 
@@ -143,7 +144,7 @@ Payload 示例：
   "platform": "gemini",
   "url": "https://gemini.google.com/...",
   "title": "Conversation title",
-  "extension_version": "0.1.13",
+  "extension_version": "0.1.14",
   "snapshot": {
     "blocks": [
       {

@@ -128,12 +128,26 @@ var POCKETREADER_FORCED_ROLE_HINTS = new WeakMap();
       showStatus(extensionErrorMessage(error), "error");
     });
 
-  openButton.addEventListener("click", async () => {
+  openButton.addEventListener("click", togglePanel);
+
+  if (isRuntimeAvailable() && chrome.runtime.onMessage) {
+    chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+      if (!message || message.type !== "POCKETREADER_TOGGLE_PANEL") {
+        return false;
+      }
+      togglePanel()
+        .then(() => sendResponse({ ok: true }))
+        .catch((error) => sendResponse({ ok: false, error: error.message || String(error) }));
+      return true;
+    });
+  }
+
+  async function togglePanel() {
     panel.classList.toggle("open");
     if (panel.classList.contains("open")) {
       await parseCurrentPage();
     }
-  });
+  }
 
   closeButton.addEventListener("click", () => {
     panel.classList.remove("open");

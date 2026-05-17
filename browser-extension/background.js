@@ -9,6 +9,17 @@ const DEFAULTS = {
   splitByTurn: false
 };
 
+if (chrome.action && chrome.action.onClicked) {
+  chrome.action.onClicked.addListener((tab) => {
+    if (!tab || !tab.id) {
+      return;
+    }
+    chrome.tabs.sendMessage(tab.id, { type: "POCKETREADER_TOGGLE_PANEL" }, () => {
+      void chrome.runtime.lastError;
+    });
+  });
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!message) {
     return false;
