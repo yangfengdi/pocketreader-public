@@ -14,17 +14,43 @@
 }
 
 .pocketreader-capture-button {
-  min-width: 136px;
-  min-height: 44px;
+  width: 56px;
+  height: 56px;
   border: 1px solid rgba(14, 83, 72, 0.18);
-  border-radius: 999px;
-  padding: 0 18px;
+  border-radius: 50%;
+  padding: 0;
   color: #ffffff;
   background: #1f7668;
   box-shadow: 0 10px 28px rgba(16, 31, 50, 0.22);
-  font-size: 15px;
-  font-weight: 800;
   cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+}
+
+.pocketreader-capture-button:hover {
+  transform: translateY(-1px);
+  background: #197062;
+  box-shadow: 0 14px 30px rgba(16, 31, 50, 0.26);
+}
+
+.pocketreader-capture-button:active {
+  transform: translateY(0);
+}
+
+.pocketreader-capture-icon {
+  width: 31px;
+  height: 31px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.85;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.pocketreader-capture-icon path:nth-child(2) {
+  fill: currentColor;
+  stroke: none;
 }
 
 .pocketreader-panel {

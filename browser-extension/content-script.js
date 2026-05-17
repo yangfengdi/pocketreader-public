@@ -64,7 +64,7 @@ var POCKETREADER_FORCED_ROLE_HINTS = new WeakMap();
   root.innerHTML = `
     <div class="pocketreader-panel" aria-live="polite">
       <div class="pocketreader-panel-header">
-        <span>导入 PocketReader</span>
+        <span>PocketReader</span>
         <button type="button" class="pocketreader-panel-close" aria-label="关闭">×</button>
       </div>
       <div class="pocketreader-panel-body">
@@ -92,7 +92,13 @@ var POCKETREADER_FORCED_ROLE_HINTS = new WeakMap();
         <div class="pocketreader-status"></div>
       </div>
     </div>
-    <button type="button" class="pocketreader-capture-button">导入 PocketReader</button>
+    <button type="button" class="pocketreader-capture-button" aria-label="导入 PocketReader" title="导入 PocketReader">
+      <svg aria-hidden="true" viewBox="0 0 24 24" class="pocketreader-capture-icon">
+        <path d="M4.5 6.5c0-1.1.9-2 2-2H19a.5.5 0 0 1 .5.5v13.5a1 1 0 0 1-1 1H6.5a2 2 0 0 1-2-2v-11Z"></path>
+        <path d="M7.75 8.25v7.5l6-3.75-6-3.75Z"></path>
+        <path d="M16 9.25c.85.62 1.35 1.58 1.35 2.75S16.85 14.13 16 14.75"></path>
+      </svg>
+    </button>
   `;
   document.body.append(root);
 

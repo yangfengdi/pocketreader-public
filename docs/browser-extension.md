@@ -45,7 +45,7 @@ https://reader.example.com/extension
 ## 使用
 
 1. 在 Chrome 中正常打开 ChatGPT、Gemini 或 Claude 对话页。
-2. 点击页面右下角的“导入 PocketReader”按钮。
+2. 点击页面右下角的圆形 PocketReader 图标按钮。
    也可以点击 Chrome 工具栏里的 PocketReader 图标打开同一个导入面板。
 3. 检查标题、朗读范围和声音。
 4. 点击“提交导入”。
@@ -144,7 +144,7 @@ Payload 示例：
   "platform": "gemini",
   "url": "https://gemini.google.com/...",
   "title": "Conversation title",
-  "extension_version": "0.1.14",
+  "extension_version": "0.1.15",
   "snapshot": {
     "blocks": [
       {
