@@ -26,12 +26,15 @@ def markdown_to_speech_text(markdown: str) -> str:
     text = re.sub(r"(\*\*|__)(.*?)\1", r"\2", text)
     text = re.sub(r"(?<!\*)\*([^*\n]+)\*(?!\*)", r"\1", text)
     text = re.sub(r"(?<!_)_([^_\n]+)_(?!_)", r"\1", text)
+    text = re.sub(r"~~(.*?)~~", r"\1", text)
     text = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", text)
     text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
-    text = re.sub(r"^#{1,6}\s*", "", text, flags=re.M)
-    text = re.sub(r"^\s*[-*+]\s+", "- ", text, flags=re.M)
+    text = re.sub(r"^[ \t]{0,3}#{1,6}[ \t]*(.*?)[ \t]*#*[ \t]*$", r"\1", text, flags=re.M)
+    text = re.sub(r"^[ \t]{0,3}(=+|-+)[ \t]*$", "", text, flags=re.M)
+    text = re.sub(r"^[ \t]{0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$", "", text, flags=re.M)
+    text = "\n".join(markdown_table_line_to_text(line) for line in text.splitlines())
+    text = re.sub(r"^\s*[-*+]\s+(?:\[[ xX]\]\s*)?", "", text, flags=re.M)
     text = re.sub(r"^\s*>\s?", "", text, flags=re.M)
-    text = re.sub(r"^\s*\|.*\|\s*$", " ", text, flags=re.M)
     text = re.sub(r"<[^>]+>", " ", text)
     return normalize_text(text)
 
@@ -42,9 +45,19 @@ def title_from_markdown(markdown: str) -> str | None:
         if not line:
             continue
         if line.startswith("#"):
-            return line.lstrip("#").strip()[:120] or None
+            return re.sub(r"\s+#*$", "", line.lstrip("#").strip())[:120] or None
         return line[:120]
     return None
+
+
+def markdown_table_line_to_text(line: str) -> str:
+    stripped = line.strip()
+    if not (stripped.startswith("|") and stripped.endswith("|")):
+        return line
+    cells = [cell.strip() for cell in stripped.strip("|").split("|")]
+    if cells and all(re.fullmatch(r":?-{3,}:?", cell.replace(" ", "")) for cell in cells):
+        return ""
+    return "，".join(cell for cell in cells if cell)
 
 
 def html_to_text(html: str) -> tuple[str | None, str]:
