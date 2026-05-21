@@ -91,6 +91,7 @@ GET / HEAD / Range GET audio file
 
 - `pocketreader.importers`
   - 普通文本和 Markdown 清理。
+  - Markdown 清理必须遵守“去符号、保正文”的原则：标题、加粗正文、表格单元格、链接显示文字、代码块正文等实际内容不能被删除；详细规则见 `docs/markdown-speech.md`。
   - URL 抓取和可读文本提取。
   - ChatGPT share page 的 React Router payload 解析。
   - Gemini / Claude share page 的错误识别。

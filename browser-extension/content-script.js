@@ -450,6 +450,10 @@ function addClaudeFallbackTextNodes(nodes, seen) {
     "h2",
     "h3",
     "h4",
+    "h5",
+    "h6",
+    "strong",
+    "b",
     "[class*='prose' i]",
     "[class*='markdown' i]",
     "[class*='leading-' i]",
@@ -555,10 +559,95 @@ function isClaudeAssistantFallbackNode(node) {
     return false;
   }
   const text = cleanText(node.innerText || node.textContent || "");
+  if (isClaudeAssistantStandaloneFormattingNode(node, text)) {
+    return true;
+  }
   if (text.length < 20 || isMostlyUiText(text) || text.includes("Claude is AI and can make mistakes")) {
     return false;
   }
   return true;
+}
+
+function isClaudeAssistantStandaloneFormattingNode(node, text) {
+  const tagName = String(node.tagName || "").toLowerCase();
+  if (!["strong", "b"].includes(tagName)) {
+    return false;
+  }
+  const value = cleanText(text || node.innerText || node.textContent || "");
+  if (value.length < 2 || value.length > 120 || isMostlyUiText(value)) {
+    return false;
+  }
+  if (/[。！？!?；;]$/.test(value) && value.length > 20) {
+    return false;
+  }
+  if (
+    node.closest(
+      [
+        "p",
+        "li",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "blockquote",
+        "pre",
+        "code",
+        "button",
+        "[role='button']",
+        "a",
+        "#pocketreader-capture-root",
+        "nav",
+        "aside",
+        "header",
+        "footer",
+        "form",
+        "textarea",
+        "[contenteditable='true']",
+        "[data-testid*='user-message' i]",
+        ".font-user-message",
+        "[data-testid*='artifact' i]",
+        "[class*='artifact' i]",
+        "[data-testid*='canvas' i]",
+        "[class*='canvas' i]"
+      ].join(",")
+    )
+  ) {
+    return false;
+  }
+  if (hasNonWhitespaceTextSibling(node)) {
+    return false;
+  }
+  return Boolean(
+    node.closest(
+      [
+        "[data-testid*='assistant-message' i]",
+        ".font-claude-message",
+        "[class*='font-claude-response' i]",
+        "[class*='prose' i]",
+        "[class*='markdown' i]",
+        "[class*='leading-' i]"
+      ].join(",")
+    )
+  );
+}
+
+function hasNonWhitespaceTextSibling(node) {
+  const parent = node.parentElement;
+  if (!parent || !parent.childNodes) {
+    return false;
+  }
+  const textNodeType = typeof Node === "undefined" ? 3 : Node.TEXT_NODE;
+  for (const child of parent.childNodes) {
+    if (child === node || child.nodeType !== textNodeType) {
+      continue;
+    }
+    if (cleanText(child.textContent || "")) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function looksLikeUserPromptText(text) {

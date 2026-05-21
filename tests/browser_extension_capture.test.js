@@ -115,21 +115,93 @@ test("Claude collapsed user previews are not treated as assistant fallback", () 
   assert.strictEqual(context.isClaudeAssistantFallbackNode(preview), false);
 });
 
-function fakeNode({ className = "", text = "", width = 100, height = 40, closestResult = null }) {
-  return {
+test("Claude standalone bold headings are treated as assistant fallback text", () => {
+  const assistantContext = {
+    closest(selector) {
+      return selector === "main" ? {} : null;
+    }
+  };
+  const heading = fakeNode({
+    tagName: "strong",
+    text: "艺术与品味",
+    closestBySelector(selector) {
+      if (selector.includes("font-claude-message")) {
+        return assistantContext;
+      }
+      return null;
+    }
+  });
+
+  assert.strictEqual(context.isClaudeAssistantStandaloneFormattingNode(heading), true);
+  assert.strictEqual(context.isClaudeAssistantFallbackNode(heading), true);
+});
+
+test("Claude inline bold spans are not duplicated as standalone fallback text", () => {
+  const assistantContext = {
+    closest(selector) {
+      return selector === "main" ? {} : null;
+    }
+  };
+  const inline = fakeNode({
+    tagName: "strong",
+    text: "艺术与品味",
+    textSiblings: ["这里讨论", "这个概念。"],
+    closestBySelector(selector) {
+      if (selector.split(",").map((part) => part.trim()).includes("p")) {
+        return {};
+      }
+      if (selector.includes("font-claude-message")) {
+        return assistantContext;
+      }
+      return null;
+    }
+  });
+
+  assert.strictEqual(context.isClaudeAssistantStandaloneFormattingNode(inline), false);
+});
+
+function fakeNode({
+  className = "",
+  tagName = "div",
+  text = "",
+  width = 100,
+  height = 40,
+  closestResult = null,
+  closestBySelector = null,
+  textSiblings = []
+}) {
+  const node = {
+    tagName,
     innerText: text,
     textContent: text,
+    parentElement: null,
+    childNodes: [],
     getAttribute(name) {
       return name === "class" ? className : "";
     },
     getBoundingClientRect() {
       return { width, height };
     },
-    closest() {
+    closest(selector) {
+      if (closestBySelector) {
+        return closestBySelector(selector);
+      }
       return closestResult;
     },
     querySelector() {
       return null;
     }
+  };
+  node.parentElement = {
+    innerText: [textSiblings[0] || "", text, textSiblings[1] || ""].join(""),
+    textContent: [textSiblings[0] || "", text, textSiblings[1] || ""].join(""),
+    childNodes: [
+      { nodeType: 3, textContent: textSiblings[0] || "" },
+      node,
+      { nodeType: 3, textContent: textSiblings[1] || "" }
+    ]
+  };
+  return {
+    ...node
   };
 }

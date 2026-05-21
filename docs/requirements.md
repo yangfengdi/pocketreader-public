@@ -43,6 +43,7 @@ iPhone 13 Pro Max
 
 - 单用户登录。
 - 导入普通文本和 Markdown。
+- Markdown 转朗读时只删除结构符号，不删除被结构符号包裹的正文；标题、加粗小标题、表格内容、链接显示文字和代码块正文都必须保留。
 - 批量上传 `.txt`、`.md`、`.markdown`。
 - 导入公开 URL。
 - 对 ChatGPT share link 做专门解析。

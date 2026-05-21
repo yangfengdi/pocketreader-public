@@ -21,7 +21,8 @@ def normalize_text(text: str) -> str:
 
 def markdown_to_speech_text(markdown: str) -> str:
     text = markdown
-    text = re.sub(r"```.*?```", " ", text, flags=re.S)
+    text = re.sub(r"```[^\n]*\n(.*?)\n?```", r"\1", text, flags=re.S)
+    text = re.sub(r"~~~[^\n]*\n(.*?)\n?~~~", r"\1", text, flags=re.S)
     text = re.sub(r"`([^`]+)`", r"\1", text)
     text = re.sub(r"(\*\*|__)(.*?)\1", r"\2", text)
     text = re.sub(r"(?<!\*)\*([^*\n]+)\*(?!\*)", r"\1", text)

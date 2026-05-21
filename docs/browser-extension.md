@@ -219,3 +219,13 @@ Payload 示例：
 - Claude Artifact / 打开的文档面板：如果页面 DOM 中存在明确 Artifact 标记，或用户已经打开了带预览、编辑器、代码/Markdown 内容区的文档面板，扩展会尽量把它当作 Markdown 文本文件提交。Claude 有时把打开文档渲染成 `.standard-markdown` / `.progressive-markdown`，扩展只会在侧边面板、弹层、Artifact、Canvas、Document、Preview、Editor 等明确容器里采集这些 Markdown，避免把主对话里的普通回复误判为文件。如果 Claude 只把打开文档作为普通文本块混入 snapshot，后端会根据“artifact 标题块 + 后续完整文档块”再兜底识别一次。
 
 如果 AI 网站只暴露不可下载的内部 `sandbox:` 链接、Artifact 没有明确 DOM 标记，或文件是 PDF/图片/表格这类当前无法抽取正文的格式，扩展会跳过该文件。不要用“右侧大块文本”兜底猜测文件；这已经导致过普通回复被误判为文件。后续要支持更多格式，应在 `browser-extension/content-script.js` 的文件提取逻辑和 `pocketreader/importers.py` 的文件解析逻辑里扩展。
+
+## Markdown 结构文本
+
+AI 回复和 AI 生成文件经常是 Markdown。PocketReader 的原则是只删除 Markdown 格式符号，不删除正文。标题、加粗小标题、表格单元格、链接显示文字、行内代码和代码块正文都要保留；详细规则见：
+
+```text
+docs/markdown-speech.md
+```
+
+Claude 有时会把 `**艺术与品味**` 这类小标题渲染成独立 `<strong>` / `<b>` 节点。扩展会把位于 AI 回复上下文中的独立加粗节点提交给后端；如果加粗节点在段落、列表、链接、按钮、Artifact、用户消息或输入框内部，则不单独提交，避免重复朗读或误抓 UI。
