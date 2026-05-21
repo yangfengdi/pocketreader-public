@@ -138,7 +138,7 @@ Docker Compose 发布端口：
   - 可选“每个回合生成一个独立音频”。
   - 拆分标题使用 `[1/9]`、`[05/19]`、`[012/109]` 这类编号。
   - 可读取的 AI 生成文件会被单独导入，标题前缀为 `[文件]` 或 `[文件 1/2]`；Claude Artifact 必须有明确 Artifact DOM 标记，不能靠右侧大块文本猜测。
-  - Claude 独立加粗小标题，例如 `**艺术与品味**` 渲染成单独 `strong` / `b` 时，也属于 AI 正文，扩展需要采集；不要只抓段落而漏掉这类结构文本。
+  - Claude Markdown 小标题，例如 `**艺术与品味**` 渲染成短段落、单独 `strong` / `b`、或“只有一个加粗节点的段落”时，也属于 AI 正文，扩展需要采集；不要因为文本少于 20 字就过滤掉这类结构文本。
   - 扩展 reload 后必须刷新已打开的 AI 页面，否则旧 content script 会报 `Extension context invalidated`。
   - AI 平台解析规则见 `docs/ai-capture-design.md`；不要用宽泛 selector 临时修 Claude，否则容易误抓重复消息或把正文误判为文件。
 

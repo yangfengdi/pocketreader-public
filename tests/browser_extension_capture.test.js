@@ -136,6 +136,33 @@ test("Claude standalone bold headings are treated as assistant fallback text", (
   assert.strictEqual(context.isClaudeAssistantFallbackNode(heading), true);
 });
 
+test("Claude short markdown heading paragraphs are treated as assistant fallback text", () => {
+  const heading = fakeNode({
+    tagName: "p",
+    className: "font-claude-response-body break-words whitespace-normal leading-[1.7]",
+    text: "艺术与品味",
+    closestBySelector(selector) {
+      return selector.includes("font-claude-response-body") ? {} : null;
+    }
+  });
+
+  assert.strictEqual(context.isClaudeAssistantShortHeadingNode(heading), true);
+  assert.strictEqual(context.isClaudeAssistantFallbackNode(heading), true);
+});
+
+test("Claude short sentence paragraphs are not treated as fallback headings", () => {
+  const sentence = fakeNode({
+    tagName: "p",
+    className: "font-claude-response-body break-words whitespace-normal leading-[1.7]",
+    text: "这是一个短句。",
+    closestBySelector(selector) {
+      return selector.includes("font-claude-response-body") ? {} : null;
+    }
+  });
+
+  assert.strictEqual(context.isClaudeAssistantShortHeadingNode(sentence), false);
+});
+
 test("Claude inline bold spans are not duplicated as standalone fallback text", () => {
   const assistantContext = {
     closest(selector) {
@@ -190,6 +217,9 @@ function fakeNode({
     },
     querySelector() {
       return null;
+    },
+    querySelectorAll() {
+      return [];
     }
   };
   node.parentElement = {

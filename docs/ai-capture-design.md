@@ -237,7 +237,7 @@ Claude DOM 最容易变化，规则要保守。
 - AI: `[data-testid='assistant-message']`、`[data-testid*='assistant-message']`、`.font-claude-message`
 - Claude 折叠用户消息：Claude 有时会把很长的用户问题显示成窄宽度、`line-clamp`、`text-[8px]` 的预览块，而不是标准 `user-message` 容器。扩展和后端都要把这类带明显提问语气的块识别成 `User`，否则会把下一条 AI 回复并入上一轮。
 - AI fallback：如果明确 AI selector 没有覆盖当前 Claude 版本，扩展会在 `main` 对话区域内采集可见的 `p`、`li`、标题、代码块等正文节点，并排除 user message、折叠用户消息、nav、aside、composer、PocketReader 面板和常见 UI 文案；这些 fallback 节点只作为 `AI` 候选提交给后端。
-- 独立加粗标题：Claude 有时把 `**艺术与品味**` 这类 Markdown 小标题渲染成独立的 `<strong>` / `<b>` 节点，而不是 `p` 或 `h2`。扩展应采集位于 AI 回复上下文中的独立 `strong` / `b` 节点；但如果它们在 `p`、`li`、标题、按钮、链接、Artifact、用户消息或输入框内部，则不能单独采集，避免重复或误抓 UI。详细原则见 `docs/markdown-speech.md`。
+- Markdown 小标题：Claude 有时把 `**艺术与品味**` 这类 Markdown 小标题渲染成短段落、独立 `<strong>` / `<b>`，或“只有一个加粗节点的段落”。扩展应采集位于 AI 回复上下文中的短标题块；但如果加粗节点在普通段落、列表、按钮、链接、Artifact、用户消息或输入框内部，则不能单独采集，避免重复或误抓 UI。详细原则见 `docs/markdown-speech.md`。
 - 文件/Artifact：明确包含 `artifact`、`canvas`、`file`、`attachment`、`download` 的节点。Claude Artifact 卡片上的 `Document · MD` 标题只能作为锚点，不能单独当成文件正文；只有扩展提交了正文，或后端在卡片后面找到打开的文档正文时，才创建文件条目。
 
 禁止：

@@ -562,7 +562,31 @@ function isClaudeAssistantFallbackNode(node) {
   if (isClaudeAssistantStandaloneFormattingNode(node, text)) {
     return true;
   }
+  if (isClaudeAssistantShortHeadingNode(node, text)) {
+    return true;
+  }
   if (text.length < 20 || isMostlyUiText(text) || text.includes("Claude is AI and can make mistakes")) {
+    return false;
+  }
+  return true;
+}
+
+function isClaudeAssistantShortHeadingNode(node, text) {
+  const tagName = String(node.tagName || "").toLowerCase();
+  if (!["p", "div", "span", "strong", "b", "h1", "h2", "h3", "h4", "h5", "h6"].includes(tagName)) {
+    return false;
+  }
+  const value = cleanText(text || node.innerText || node.textContent || "");
+  if (value.length < 2 || value.length > 120 || value.split("\n").length > 2 || isMostlyUiText(value)) {
+    return false;
+  }
+  if (textLooksLikeSentence(value) || value.includes("Claude is AI and can make mistakes")) {
+    return false;
+  }
+  if (!isClaudeAssistantTextContext(node)) {
+    return false;
+  }
+  if (["strong", "b"].includes(tagName) && hasNonWhitespaceTextSibling(node)) {
     return false;
   }
   return true;
@@ -620,17 +644,35 @@ function isClaudeAssistantStandaloneFormattingNode(node, text) {
     return false;
   }
   return Boolean(
+    isClaudeAssistantTextContext(node)
+  );
+}
+
+function isClaudeAssistantTextContext(node) {
+  return Boolean(
     node.closest(
       [
         "[data-testid*='assistant-message' i]",
         ".font-claude-message",
         "[class*='font-claude-response' i]",
+        "[class*='font-claude-response-body' i]",
         "[class*='prose' i]",
         "[class*='markdown' i]",
         "[class*='leading-' i]"
       ].join(",")
     )
   );
+}
+
+function textLooksLikeSentence(text) {
+  const value = cleanText(text);
+  if (!value) {
+    return false;
+  }
+  if (/[。！？!?；;。]$/.test(value)) {
+    return true;
+  }
+  return value.length >= 28 && /[，,。.!?！？；;]/.test(value);
 }
 
 function hasNonWhitespaceTextSibling(node) {
