@@ -212,6 +212,19 @@ class Database:
         with self.connect() as conn:
             return conn.execute("SELECT * FROM items WHERE id = ?", (item_id,)).fetchone()
 
+    def list_items_by_source(self, *, source_type: str, source_url: str) -> list[sqlite3.Row]:
+        with self.connect() as conn:
+            return list(
+                conn.execute(
+                    """
+                    SELECT * FROM items
+                    WHERE source_type = ? AND COALESCE(source_url, '') = ?
+                    ORDER BY created_at ASC, id ASC
+                    """,
+                    (source_type, source_url),
+                )
+            )
+
     def claim_next_item(self) -> sqlite3.Row | None:
         now = utc_now()
         conn = sqlite3.connect(self.path, isolation_level=None)

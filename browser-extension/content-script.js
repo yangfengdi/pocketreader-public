@@ -202,7 +202,9 @@ var POCKETREADER_FORCED_ROLE_HINTS = new WeakMap();
         throw new Error(response && response.error ? response.error : "提交失败");
       }
       const result = response.result || {};
-      if (Array.isArray(result.item_ids) && result.item_ids.length > 1) {
+      if (Number(result.count || 0) === 0) {
+        showStatus("没有新增音频，已有回合已跳过", "ok");
+      } else if (Array.isArray(result.item_ids) && result.item_ids.length > 1) {
         showStatus(`已创建 ${result.item_ids.length} 个条目`, "ok");
       } else {
         const itemId = result.item_id || (Array.isArray(result.item_ids) ? result.item_ids[0] : "");

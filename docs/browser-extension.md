@@ -196,7 +196,8 @@ Payload 示例：
 - 根据 `reader_mode` 选择只保留 AI 回复或完整对话。
 - `split_by_turn=false` 时，创建一个普通 `queued` item。
 - `split_by_turn=true` 时，按 User 消息开始新回合、后续 AI 消息归入同一回合的规则拆成多个 item；只生成包含 AI 回复的回合。
-- 拆分后每个标题最前面加编号，例如 `[1/9]`、`[05/19]`、`[012/109]`。
+- 拆分后每个标题最前面加当前回合编号，例如 `[001]`、`[005]`、`[012]`；标题不包含回合总数，因为同一会话会继续增长。
+- 同一 AI 会话再次导入时，服务端按 `platform + source_url + 回合编号` 判断已有回合，只为新增回合创建音频；已有非错误状态回合会被跳过。
 - `include_user_question=true` 时，每个拆分条目包含提问和回答；为 `false` 时只保留 AI 回复。
 - 如果 payload 中有 `files`，服务端会为每个可读取文件创建独立 item。
 - 文件标题使用 `[文件]` 或 `[文件 1/2]` 前缀，`source_type` 为 `browser:<platform>:file`。
