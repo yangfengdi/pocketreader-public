@@ -56,7 +56,7 @@ app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")
 templates.env.filters["duration"] = lambda value: format_duration(value)
 templates.env.filters["datetime"] = lambda value: format_datetime(value)
 templates.env.filters["status_label"] = lambda value: status_label(value)
-TURN_TITLE_RE = re.compile(r"^\[(\d+)(?:/\d+)?\]\s*(.*)$")
+TURN_TITLE_RE = re.compile(r"^\[(?:(问&答|AI答)\s+)?(\d+)(?:/\d+)?\]\s*(.*)$")
 
 
 @app.on_event("startup")
@@ -391,8 +391,7 @@ async def browser_capture(request: Request) -> dict[str, object]:
         if not turns and not captured_file_ids:
             raise HTTPException(status_code=400, detail="No AI turns were found in captured content.")
         turn_reader_mode = "all" if include_user_question else "assistant"
-        existing_turn_items = existing_turn_items_by_index(platform, source_url)
-        retitle_existing_turn_items(existing_turn_items)
+        existing_turn_items = existing_turn_items_by_index(platform, source_url, turn_reader_mode)
         created_by_index: dict[int, int] = {}
         for index, turn in reversed(list(enumerate(turns, start=1))):
             if index in existing_turn_items:
@@ -400,7 +399,7 @@ async def browser_capture(request: Request) -> dict[str, object]:
             turn_body = render_messages(turn, turn_reader_mode)
             if not turn_body:
                 continue
-            turn_title = numbered_title(title or derive_title(turn_body), index)
+            turn_title = numbered_title(title or derive_title(turn_body), index, turn_reader_mode)
             item_id = db.create_item(
                 title=turn_title,
                 body=turn_body,
@@ -408,6 +407,7 @@ async def browser_capture(request: Request) -> dict[str, object]:
                 source_url=source_url or None,
                 voice=voice,
                 reader_mode=turn_reader_mode,
+                turn_index=index,
             )
             created_by_index[index] = item_id
         if not turns and not captured_file_ids:
@@ -538,8 +538,7 @@ def create_browser_items_from_parsed(
         if not turns and not captured_file_ids:
             raise HTTPException(status_code=400, detail="No AI turns were found in captured content.")
         turn_reader_mode = "all" if include_user_question else "assistant"
-        existing_turn_items = existing_turn_items_by_index(platform, source_url)
-        retitle_existing_turn_items(existing_turn_items)
+        existing_turn_items = existing_turn_items_by_index(platform, source_url, turn_reader_mode)
         created_by_index: dict[int, int] = {}
         for index, turn in reversed(list(enumerate(turns, start=1))):
             if index in existing_turn_items:
@@ -548,12 +547,13 @@ def create_browser_items_from_parsed(
             if not turn_body:
                 continue
             item_id = db.create_item(
-                title=numbered_title(title or derive_title(turn_body), index),
+                title=numbered_title(title or derive_title(turn_body), index, turn_reader_mode),
                 body=turn_body,
                 source_type=f"browser:{platform}:turn",
                 source_url=source_url or None,
                 voice=voice,
                 reader_mode=turn_reader_mode,
+                turn_index=index,
             )
             created_by_index[index] = item_id
         ordered_ids = [created_by_index[index] for index in sorted(created_by_index)]
@@ -739,13 +739,15 @@ def parse_bool(value: object, *, default: bool) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
-def numbered_title(title: str, index: int) -> str:
-    return f"[{index:03d}] {title.strip() or 'Untitled'}"
+def numbered_title(title: str, index: int, reader_mode: str) -> str:
+    label = "问&答" if reader_mode == "all" else "AI答"
+    return f"[{label} {index:03d}] {title.strip() or 'Untitled'}"
 
 
 def existing_turn_items_by_index(
     platform: str,
     source_url: str,
+    reader_mode: str,
 ) -> dict[int, list[Any]]:
     if not source_url:
         return {}
@@ -754,8 +756,15 @@ def existing_turn_items_by_index(
     for item in db.list_items_by_source(source_type=source_type, source_url=source_url):
         if str(item["status"] or "") == "error":
             continue
-        turn_index = turn_index_from_title(str(item["title"] or ""))
+        turn_index = item["turn_index"] or turn_index_from_title(str(item["title"] or ""))
         if turn_index is None:
+            continue
+        item_reader_mode = normalize_reader_mode(str(item["reader_mode"] or "assistant"))
+        base_title = strip_turn_title_prefix(str(item["title"] or "")) or "Untitled"
+        canonical_title = numbered_title(base_title, int(turn_index), item_reader_mode)
+        if str(item["title"] or "") != canonical_title or item["turn_index"] is None:
+            db.update_turn_identity(int(item["id"]), canonical_title, int(turn_index))
+        if item_reader_mode != reader_mode:
             continue
         existing.setdefault(turn_index, []).append(item)
     return existing
@@ -765,23 +774,13 @@ def turn_index_from_title(title: str) -> int | None:
     match = TURN_TITLE_RE.match(title.strip())
     if not match:
         return None
-    return int(match.group(1))
-
-
-def retitle_existing_turn_items(existing_turn_items: dict[int, list[Any]]) -> None:
-    for index, items in existing_turn_items.items():
-        for item in items:
-            current_title = str(item["title"] or "")
-            base_title = strip_turn_title_prefix(current_title) or "Untitled"
-            new_title = numbered_title(base_title, index)
-            if current_title != new_title:
-                db.update_title(int(item["id"]), new_title)
+    return int(match.group(2))
 
 
 def strip_turn_title_prefix(title: str) -> str:
     match = TURN_TITLE_RE.match(title.strip())
     if match:
-        return match.group(2).strip()
+        return match.group(3).strip()
     return title.strip()
 
 

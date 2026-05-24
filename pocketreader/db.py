@@ -41,6 +41,7 @@ class Database:
                     source_url TEXT,
                     source_filename TEXT,
                     reader_mode TEXT NOT NULL DEFAULT 'assistant',
+                    turn_index INTEGER,
                     voice TEXT NOT NULL,
                     status TEXT NOT NULL DEFAULT 'queued',
                     error TEXT,
@@ -104,6 +105,11 @@ class Database:
                     ON browser_parse_runs(capture_id, created_at);
                 """
             )
+            item_columns = {
+                str(row["name"]) for row in conn.execute("PRAGMA table_info(items)")
+            }
+            if "turn_index" not in item_columns:
+                conn.execute("ALTER TABLE items ADD COLUMN turn_index INTEGER")
 
     def requeue_interrupted_items(self) -> int:
         now = utc_now()
@@ -156,6 +162,7 @@ class Database:
         source_type: str,
         voice: str,
         reader_mode: str,
+        turn_index: int | None = None,
         source_url: str | None = None,
         source_filename: str | None = None,
         status: str = "queued",
@@ -168,9 +175,10 @@ class Database:
                 """
                 INSERT INTO items (
                     title, body, source_type, source_url, source_filename,
-                    reader_mode, voice, status, error, text_char_count, created_at, updated_at
+                    reader_mode, turn_index, voice, status, error, text_char_count,
+                    created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     clean_title,
@@ -179,6 +187,7 @@ class Database:
                     source_url,
                     source_filename,
                     reader_mode,
+                    turn_index,
                     voice,
                     status,
                     error,
@@ -332,6 +341,13 @@ class Database:
             conn.execute(
                 "UPDATE items SET title = ?, updated_at = ? WHERE id = ?",
                 (title.strip(), utc_now(), item_id),
+            )
+
+    def update_turn_identity(self, item_id: int, title: str, turn_index: int) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE items SET title = ?, turn_index = ?, updated_at = ? WHERE id = ?",
+                (title.strip(), turn_index, utc_now(), item_id),
             )
 
     def record_event(self, item_id: int, event_type: str, position_seconds: float) -> None:

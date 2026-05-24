@@ -229,6 +229,18 @@ IMPORT_TOKEN
 
 按回合拆分只适用于扩展直接抓取 ChatGPT / Gemini / Claude 当前页面。通过 PocketReader 网页粘贴 ChatGPT share link 的导入流程保持单条音频模式。
 
+按回合拆分的标题和增量规则：
+
+- “问题和 AI 回复”条目标题形如 `[问&答 001] 标题`；“只读 AI 回复”条目标题形如 `[AI答 001] 标题`。
+- 两类朗读范围分别增量计算，同一回合可以同时存在一条 `[问&答 ...]` 和一条 `[AI答 ...]`。
+- 增量身份由 `source_type`、`source_url`、`reader_mode`、`turn_index` 共同确定，不依赖标题文字。
+- 如需排查某会话为何跳过或重新生成，可查询 `items` 的上述字段：
+
+```bash
+sqlite3 /var/lib/apps/pocketreader/pocketreader.sqlite3 \
+  "select id,title,source_type,source_url,reader_mode,turn_index,status from items where source_type like 'browser:%:turn' order by id desc limit 30;"
+```
+
 如果 AI 回复里包含可读取的 AI 生成文件，扩展会把每个文件单独提交给后端，后端为每个文件创建独立音频条目。当前主要支持文本类文件、`.docx` 和带明确 DOM 标记的 Claude Artifact。不要用“右侧大块文本”兜底猜测文件；如果 Claude 没有暴露明确 Artifact DOM，应优先增加手动导入入口。
 
 调试扩展导入问题时：

@@ -11,11 +11,12 @@ class DatabaseTests(unittest.TestCase):
             db = Database(Path(temp_dir) / "test.sqlite3")
             db.init()
             queued_id = db.create_item(
-                title="Queued",
+                title="[AI答 001] Queued",
                 body="body",
                 source_type="text",
                 voice="zh-CN-XiaoxiaoNeural",
                 reader_mode="assistant",
+                turn_index=1,
             )
             error_id = db.create_item(
                 title="Error",
@@ -27,6 +28,7 @@ class DatabaseTests(unittest.TestCase):
                 error="failed",
             )
             self.assertEqual(db.get_item(queued_id)["status"], "queued")
+            self.assertEqual(db.get_item(queued_id)["turn_index"], 1)
             self.assertEqual(db.get_item(error_id)["status"], "error")
             self.assertEqual(db.get_item(error_id)["error"], "failed")
 

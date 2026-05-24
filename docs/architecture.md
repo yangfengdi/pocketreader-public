@@ -120,6 +120,7 @@ GET / HEAD / Range GET audio file
 
 - `items`
   - 条目正文、标题、来源、声音、朗读范围。
+  - 扩展按回合拆分条目使用 `turn_index` 保存结构化回合序号；与 `source_url`、平台来源及 `reader_mode` 一同决定增量导入身份。
   - 状态：`queued`、`processing`、`ready`、`error`。
   - 音频路径、时长、文本长度。
   - 播放进度和收听时间。

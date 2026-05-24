@@ -89,12 +89,14 @@ class BrowserCaptureApiTests(unittest.TestCase):
         self.assertIsNotNone(second)
         assert first is not None
         assert second is not None
-        self.assertEqual(first["title"], "[001] Split Test")
-        self.assertEqual(second["title"], "[002] Split Test")
+        self.assertEqual(first["title"], "[问&答 001] Split Test")
+        self.assertEqual(second["title"], "[问&答 002] Split Test")
         self.assertEqual(first["body"], "User: 问题一\n\nAI: 回答一")
         self.assertEqual(second["body"], "User: 问题二\n\nAI: 回答二")
         self.assertEqual(first["source_type"], "browser:claude:turn")
         self.assertEqual(second["reader_mode"], "all")
+        self.assertEqual(first["turn_index"], 1)
+        self.assertEqual(second["turn_index"], 2)
 
     def test_browser_capture_split_creates_only_new_turns_for_same_session(self) -> None:
         client = TestClient(main.app)
@@ -148,7 +150,7 @@ class BrowserCaptureApiTests(unittest.TestCase):
         created = [main.db.get_item(item_id) for item_id in second_response.json()["item_ids"]]
         self.assertEqual(
             [item["title"] for item in created if item],
-            ["[003] Incremental Test", "[004] Incremental Test"],
+            ["[问&答 003] Incremental Test", "[问&答 004] Incremental Test"],
         )
 
         all_turns = main.db.list_items_by_source(
@@ -159,12 +161,78 @@ class BrowserCaptureApiTests(unittest.TestCase):
         self.assertEqual(
             sorted(item["title"] for item in all_turns),
             [
-                "[001] Incremental Test",
-                "[002] Incremental Test",
-                "[003] Incremental Test",
-                "[004] Incremental Test",
+                "[问&答 001] Incremental Test",
+                "[问&答 002] Incremental Test",
+                "[问&答 003] Incremental Test",
+                "[问&答 004] Incremental Test",
             ],
         )
+
+    def test_browser_capture_split_treats_reader_modes_as_separate_series(self) -> None:
+        client = TestClient(main.app)
+        source_url = "https://claude.ai/chat/reader-mode-series"
+        first_messages = [
+            {"role": "User", "text": "问题一"},
+            {"role": "AI", "text": "回答一"},
+            {"role": "User", "text": "问题二"},
+            {"role": "AI", "text": "回答二"},
+        ]
+        expanded_messages = first_messages + [
+            {"role": "User", "text": "问题三"},
+            {"role": "AI", "text": "回答三"},
+        ]
+
+        answer_only = client.post(
+            "/api/browser-capture",
+            headers={"X-PocketReader-Import-Token": "import-token"},
+            json={
+                "platform": "claude",
+                "url": source_url,
+                "title": "Two Modes",
+                "split_by_turn": True,
+                "include_user_question": False,
+                "messages": first_messages,
+            },
+        )
+        full_conversation = client.post(
+            "/api/browser-capture",
+            headers={"X-PocketReader-Import-Token": "import-token"},
+            json={
+                "platform": "claude",
+                "url": source_url,
+                "title": "Two Modes",
+                "split_by_turn": True,
+                "include_user_question": True,
+                "messages": expanded_messages,
+            },
+        )
+        answer_only_increment = client.post(
+            "/api/browser-capture",
+            headers={"X-PocketReader-Import-Token": "import-token"},
+            json={
+                "platform": "claude",
+                "url": source_url,
+                "title": "Two Modes",
+                "split_by_turn": True,
+                "include_user_question": False,
+                "messages": expanded_messages,
+            },
+        )
+
+        self.assertEqual(answer_only.json()["count"], 2)
+        self.assertEqual(full_conversation.json()["count"], 3)
+        self.assertEqual(answer_only_increment.json()["count"], 1)
+        self.assertEqual(
+            [main.db.get_item(item_id)["title"] for item_id in answer_only.json()["item_ids"]],
+            ["[AI答 001] Two Modes", "[AI答 002] Two Modes"],
+        )
+        self.assertEqual(
+            [main.db.get_item(item_id)["title"] for item_id in full_conversation.json()["item_ids"]],
+            ["[问&答 001] Two Modes", "[问&答 002] Two Modes", "[问&答 003] Two Modes"],
+        )
+        increment_item = main.db.get_item(answer_only_increment.json()["item_ids"][0])
+        self.assertEqual(increment_item["title"], "[AI答 003] Two Modes")
+        self.assertEqual(increment_item["body"], "回答三")
 
     def test_browser_capture_split_renames_old_total_based_turn_titles(self) -> None:
         client = TestClient(main.app)
@@ -201,11 +269,12 @@ class BrowserCaptureApiTests(unittest.TestCase):
         existing = main.db.get_item(first_id)
         self.assertIsNotNone(existing)
         assert existing is not None
-        self.assertEqual(existing["title"], "[001] Old Format")
+        self.assertEqual(existing["title"], "[问&答 001] Old Format")
+        self.assertEqual(existing["turn_index"], 1)
         created = main.db.get_item(response.json()["item_ids"][0])
         self.assertIsNotNone(created)
         assert created is not None
-        self.assertEqual(created["title"], "[002] Old Format")
+        self.assertEqual(created["title"], "[问&答 002] Old Format")
 
     def test_browser_capture_split_can_exclude_user_questions(self) -> None:
         client = TestClient(main.app)
@@ -229,7 +298,7 @@ class BrowserCaptureApiTests(unittest.TestCase):
         item = main.db.get_item(response.json()["item_ids"][0])
         self.assertIsNotNone(item)
         assert item is not None
-        self.assertEqual(item["title"], "[001] Answer Only")
+        self.assertEqual(item["title"], "[AI答 001] Answer Only")
         self.assertEqual(item["body"], "回答")
         self.assertEqual(item["reader_mode"], "assistant")
 
@@ -372,9 +441,9 @@ class BrowserCaptureApiTests(unittest.TestCase):
         self.assertIsNotNone(third)
         assert first is not None
         assert third is not None
-        self.assertEqual(first["title"], "[001] AI时代的儿童教育长期规划")
+        self.assertEqual(first["title"], "[问&答 001] AI时代的儿童教育长期规划")
         self.assertEqual(first["body"], "User: 问题一\n\nAI: 回答一")
-        self.assertEqual(third["title"], "[003] AI时代的儿童教育长期规划")
+        self.assertEqual(third["title"], "[问&答 003] AI时代的儿童教育长期规划")
         self.assertEqual(third["body"], "User: 问题三\n\nAI: 回答三")
 
     def test_browser_snapshot_create_is_incremental_for_same_source_url(self) -> None:
@@ -449,7 +518,7 @@ class BrowserCaptureApiTests(unittest.TestCase):
         self.assertEqual(second_create.json()["count"], 2)
         self.assertEqual(
             [main.db.get_item(item_id)["title"] for item_id in second_create.json()["item_ids"]],
-            ["[003] Snapshot Incremental", "[004] Snapshot Incremental"],
+            ["[问&答 003] Snapshot Incremental", "[问&答 004] Snapshot Incremental"],
         )
 
         third_create = client.post(
@@ -465,6 +534,70 @@ class BrowserCaptureApiTests(unittest.TestCase):
 
         self.assertEqual(third_create.status_code, 200)
         self.assertEqual(third_create.json()["count"], 0)
+
+    def test_browser_snapshot_create_keeps_reader_modes_as_separate_series(self) -> None:
+        client = TestClient(main.app)
+        parse_response = client.post(
+            "/api/browser-snapshot",
+            headers={"X-PocketReader-Import-Token": "import-token"},
+            json={
+                "platform": "claude",
+                "url": "https://claude.ai/chat/snapshot-reader-modes",
+                "title": "Snapshot Modes",
+                "snapshot": {
+                    "blocks": [
+                        claude_block(0, "User", "问题一"),
+                        claude_block(1, "AI", "回答一"),
+                        claude_block(2, "User", "问题二"),
+                        claude_block(3, "AI", "回答二"),
+                    ]
+                },
+            },
+        )
+        capture_id = parse_response.json()["capture_id"]
+
+        answer_only = client.post(
+            f"/api/browser-snapshot/{capture_id}/create",
+            headers={"X-PocketReader-Import-Token": "import-token"},
+            json={
+                "title": "Snapshot Modes",
+                "reader_mode": "assistant",
+                "split_by_turn": True,
+                "include_user_question": False,
+            },
+        )
+        full_conversation = client.post(
+            f"/api/browser-snapshot/{capture_id}/create",
+            headers={"X-PocketReader-Import-Token": "import-token"},
+            json={
+                "title": "Snapshot Modes",
+                "reader_mode": "all",
+                "split_by_turn": True,
+                "include_user_question": True,
+            },
+        )
+        duplicate_answer_only = client.post(
+            f"/api/browser-snapshot/{capture_id}/create",
+            headers={"X-PocketReader-Import-Token": "import-token"},
+            json={
+                "title": "Snapshot Modes",
+                "reader_mode": "assistant",
+                "split_by_turn": True,
+                "include_user_question": False,
+            },
+        )
+
+        self.assertEqual(answer_only.json()["count"], 2)
+        self.assertEqual(full_conversation.json()["count"], 2)
+        self.assertEqual(duplicate_answer_only.json()["count"], 0)
+        self.assertEqual(
+            [main.db.get_item(item_id)["title"] for item_id in answer_only.json()["item_ids"]],
+            ["[AI答 001] Snapshot Modes", "[AI答 002] Snapshot Modes"],
+        )
+        self.assertEqual(
+            [main.db.get_item(item_id)["title"] for item_id in full_conversation.json()["item_ids"]],
+            ["[问&答 001] Snapshot Modes", "[问&答 002] Snapshot Modes"],
+        )
 
     def test_browser_snapshot_does_not_treat_plain_claude_reply_as_file(self) -> None:
         client = TestClient(main.app)

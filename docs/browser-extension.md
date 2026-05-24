@@ -196,8 +196,8 @@ Payload 示例：
 - 根据 `reader_mode` 选择只保留 AI 回复或完整对话。
 - `split_by_turn=false` 时，创建一个普通 `queued` item。
 - `split_by_turn=true` 时，按 User 消息开始新回合、后续 AI 消息归入同一回合的规则拆成多个 item；只生成包含 AI 回复的回合。
-- 拆分后每个标题最前面加当前回合编号，例如 `[001]`、`[005]`、`[012]`；标题不包含回合总数，因为同一会话会继续增长。
-- 同一 AI 会话再次导入时，服务端按 `platform + source_url + 回合编号` 判断已有回合，只为新增回合创建音频；已有非错误状态回合会被跳过。
+- 拆分后每个标题最前面加朗读范围与当前回合编号：包含提问时使用 `[问&答 001]`，只读 AI 时使用 `[AI答 001]`；标题不包含回合总数，因为同一会话会继续增长。
+- 同一 AI 会话以同一朗读范围再次导入时，服务端按 `platform + source_url + reader_mode + turn_index` 判断已有回合，只为新增回合创建音频；更换朗读范围则创建另一套音频。
 - `include_user_question=true` 时，每个拆分条目包含提问和回答；为 `false` 时只保留 AI 回复。
 - 如果 payload 中有 `files`，服务端会为每个可读取文件创建独立 item。
 - 文件标题使用 `[文件]` 或 `[文件 1/2]` 前缀，`source_type` 为 `browser:<platform>:file`。
@@ -210,6 +210,8 @@ Payload 示例：
 浏览器扩展面板里有“每个回合生成一个独立音频”checkbox。它只影响扩展直接抓取 ChatGPT、Gemini、Claude 当前页面的导入，不影响 PocketReader 网页里通过 ChatGPT share link 粘贴导入的流程。
 
 扩展的默认朗读范围是“问题和 AI 回复”。如果用户明确选择“只读 AI 回复”，服务端会在拆分时把 `include_user_question` 当作 `false` 处理，每个音频只保留回答。
+
+两个范围互不去重：`[问&答 001]` 与 `[AI答 001]` 可以同时存在。用户对同一对话切换范围后再次提交，将为新范围生成当前已经识别到的回合；之后该范围各自继续增量生成。
 
 ## AI 生成文件
 
