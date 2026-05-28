@@ -206,6 +206,7 @@ AI 3
 - 已存在且状态不是 `error` 的回合会被跳过，不重新创建音频。
 - 如果同一个页面先按“问题和 AI 回复”导入 2 回合，后来对话增长到 4 回合，再以相同范围导入时只创建 `[问&答 003]` 和 `[问&答 004]`。
 - 如果同一个页面已经有 `[AI答 001]`、`[AI答 002]`，用户随后改选“问题和 AI 回复”，服务端应为当前所有已识别回合创建 `[问&答 ...]` 条目，不能用 `[AI答 ...]` 条目阻止创建。
+- ChatGPT 当前页面导入默认按回合拆分，确保和 Claude 一样生成带编号的标题；ChatGPT share link 仍保持网页 URL 导入的单条音频模式。
 - 标题不再包含总回合数，因为总数会随着对话继续增长而变化。
 - 旧标题格式 `[1/2] 标题`、`[001] 标题` 会在同一会话再次导入时按其原有 `reader_mode` 被改写为 `[问&答 001] 标题` 或 `[AI答 001] 标题`，并补写结构化 `turn_index`。
 
@@ -225,6 +226,8 @@ AI 3
 - `data-message-author-role=assistant` -> `AI`
 - `data-testid` 含 `user-message` -> `User`
 - `data-testid` 含 `assistant-message` -> `AI`
+- `data-testid` 含 `collapsible-user-message` -> `User`，即使扩展旧版本误给了 `AI` role hint，也以后端识别为准。
+- `展开收起` 是 ChatGPT 折叠长问题的按钮文本，必须作为 UI 文案过滤，不能当成一个 User 回合。
 
 ChatGPT share link 仍走网页 URL 导入，解析逻辑在 `pocketreader/importers.py` 的 `extract_chatgpt_share()`。
 

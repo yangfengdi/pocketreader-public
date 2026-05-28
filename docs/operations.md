@@ -234,6 +234,7 @@ IMPORT_TOKEN
 - “问题和 AI 回复”条目标题形如 `[问&答 001] 标题`；“只读 AI 回复”条目标题形如 `[AI答 001] 标题`。
 - 两类朗读范围分别增量计算，同一回合可以同时存在一条 `[问&答 ...]` 和一条 `[AI答 ...]`。
 - 增量身份由 `source_type`、`source_url`、`reader_mode`、`turn_index` 共同确定，不依赖标题文字。
+- ChatGPT 当前页面导入在服务端默认按回合拆分，避免生成无编号的 `browser:chatgpt` 整段音频；ChatGPT share link URL 导入不受影响。
 - 如需排查某会话为何跳过或重新生成，可查询 `items` 的上述字段：
 
 ```bash

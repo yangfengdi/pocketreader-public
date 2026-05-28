@@ -336,7 +336,9 @@ class BrowserCaptureApiTests(unittest.TestCase):
         assert conversation is not None
         assert first_file is not None
         assert second_file is not None
-        self.assertEqual(conversation["source_type"], "browser:chatgpt")
+        self.assertEqual(conversation["title"], "[问&答 001] Conversation With Files")
+        self.assertEqual(conversation["source_type"], "browser:chatgpt:turn")
+        self.assertEqual(conversation["turn_index"], 1)
         self.assertEqual(conversation["body"], "User: 写一个文件\n\nAI: 文件已生成")
         self.assertEqual(first_file["title"], "[文件 1/2] outline.md")
         self.assertEqual(first_file["body"], "大纲\n\n第一节")
@@ -597,6 +599,79 @@ class BrowserCaptureApiTests(unittest.TestCase):
         self.assertEqual(
             [main.db.get_item(item_id)["title"] for item_id in full_conversation.json()["item_ids"]],
             ["[问&答 001] Snapshot Modes", "[问&答 002] Snapshot Modes"],
+        )
+
+    def test_browser_snapshot_defaults_chatgpt_to_numbered_turns(self) -> None:
+        client = TestClient(main.app)
+        parse_response = client.post(
+            "/api/browser-snapshot",
+            headers={"X-PocketReader-Import-Token": "import-token"},
+            json={
+                "platform": "chatgpt",
+                "url": "https://chatgpt.com/c/chatgpt-numbered",
+                "title": "ChatGPT Numbered",
+                "snapshot": {
+                    "blocks": [
+                        chatgpt_block(
+                            0,
+                            "User",
+                            "请从羞耻感角度解释这个社会现象。",
+                            data_testid="conversation-turn-1",
+                        ),
+                        chatgpt_block(
+                            1,
+                            "AI",
+                            "请从羞耻感角度解释这个社会现象。",
+                            data_testid="collapsible-user-message-content",
+                        ),
+                        chatgpt_block(
+                            2,
+                            "User",
+                            "展开收起",
+                            tag="button",
+                            data_testid="collapsible-user-message-toggle",
+                        ),
+                        chatgpt_block(
+                            3,
+                            "AI",
+                            "羞耻感会把外部规范压进人的自我评价中。",
+                            data_testid="assistant-message",
+                        ),
+                    ]
+                },
+            },
+        )
+
+        self.assertEqual(parse_response.status_code, 200)
+        parsed = parse_response.json()
+        self.assertEqual(parsed["summary"]["message_count"], 2)
+        self.assertEqual(parsed["summary"]["turn_count"], 1)
+        self.assertEqual(parsed["messages"][0]["role"], "User")
+        self.assertEqual(parsed["messages"][1]["role"], "AI")
+
+        create_response = client.post(
+            f"/api/browser-snapshot/{parsed['capture_id']}/create",
+            headers={"X-PocketReader-Import-Token": "import-token"},
+            json={
+                "title": "ChatGPT Numbered",
+                "reader_mode": "all",
+                "split_by_turn": False,
+                "include_user_question": True,
+            },
+        )
+
+        self.assertEqual(create_response.status_code, 200)
+        data = create_response.json()
+        self.assertEqual(data["count"], 1)
+        item = main.db.get_item(data["item_id"])
+        self.assertIsNotNone(item)
+        assert item is not None
+        self.assertEqual(item["title"], "[问&答 001] ChatGPT Numbered")
+        self.assertEqual(item["source_type"], "browser:chatgpt:turn")
+        self.assertEqual(item["turn_index"], 1)
+        self.assertEqual(
+            item["body"],
+            "User: 请从羞耻感角度解释这个社会现象。\n\nAI: 羞耻感会把外部规范压进人的自我评价中。",
         )
 
     def test_browser_snapshot_does_not_treat_plain_claude_reply_as_file(self) -> None:
@@ -1128,6 +1203,30 @@ def claude_block(index: int, role: str, text: str) -> dict[str, object]:
         "role_hint": role,
         "kind_hint": "message",
         "attrs": {"data-testid": test_id, "class": class_name},
+        "text": text,
+    }
+
+
+def chatgpt_block(
+    index: int,
+    role: str,
+    text: str,
+    *,
+    tag: str = "div",
+    data_testid: str = "",
+) -> dict[str, object]:
+    attrs = {
+        "class": "min-h-8 text-message relative flex w-full flex-col",
+    }
+    if data_testid:
+        attrs["data-testid"] = data_testid
+    return {
+        "index": index,
+        "tag": tag,
+        "role_hint": role,
+        "kind_hint": "message",
+        "attrs": attrs,
+        "path": f"div > section[data-testid=\"conversation-turn-{index}\"] > div",
         "text": text,
     }
 

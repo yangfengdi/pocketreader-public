@@ -6,7 +6,7 @@ const DEFAULTS = {
   importToken: "",
   voice: "zh-CN-XiaoxiaoNeural",
   readerMode: "all",
-  splitByTurn: false
+  splitByTurn: true
 };
 
 const form = document.querySelector("#settings-form");

@@ -136,6 +136,7 @@ Docker Compose 发布端口：
   - 原始快照保存在 `browser_captures`，解析结果保存在 `browser_parse_runs`。
   - 默认朗读“问题和 AI 回复”。
   - 可选“每个回合生成一个独立音频”。
+  - ChatGPT 当前页面导入默认按回合拆分，和 Claude 一样生成带编号标题；ChatGPT share link URL 导入仍是单条音频。
   - 拆分标题使用 `[问&答 001]` 或 `[AI答 001]`，同时显示朗读范围和当前回合序号，不再包含回合总数。
   - 同一 AI 会话重复导入时，按 `platform + source_url + reader_mode + turn_index` 做增量创建；同一范围已有非错误状态回合跳过，只创建新增回合。`问&答` 与 `AI答` 是可并存的两个系列。
   - `items.turn_index` 是回合身份字段；旧标题如 `[001]` 或 `[1/2]` 会在相应会话下一次导入时根据原有 `reader_mode` 升级标题并补写该字段。

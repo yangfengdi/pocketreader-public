@@ -7,7 +7,7 @@ from pocketreader.importers import normalize_message_role, normalize_messages, s
 from pocketreader.text import normalize_text
 
 
-PARSER_VERSION = "2026-05-17.1"
+PARSER_VERSION = "2026-05-28.1"
 MAX_TEXT_CHARS = 300_000
 TEXT_FILE_EXTENSIONS = {
     "txt",
@@ -387,20 +387,7 @@ def add_file(files: list[dict[str, Any]], candidate: dict[str, Any]) -> None:
 
 
 def role_from_block(platform: str, block: dict[str, Any]) -> str | None:
-    if platform == "claude" and claude_collapsed_user_preview_block(block):
-        return "User"
-
-    role = normalize_message_role(block.get("role_hint"))
-    if role:
-        return role
-
     attrs = block.get("attrs") if isinstance(block.get("attrs"), dict) else {}
-    author_role = clean_string(attrs.get("data-message-author-role")).lower()
-    if author_role:
-        role = normalize_message_role(author_role)
-        if role:
-            return role
-
     haystack = " ".join(
         [
             platform,
@@ -413,6 +400,33 @@ def role_from_block(platform: str, block: dict[str, Any]) -> str | None:
             clean_string(block.get("path")),
         ]
     ).lower()
+    if platform == "chatgpt" and "collapsible-user-message" in haystack:
+        return "User"
+    if platform == "claude" and claude_collapsed_user_preview_block(block):
+        return "User"
+
+    role = normalize_message_role(block.get("role_hint"))
+    if role:
+        return role
+
+    author_role = clean_string(attrs.get("data-message-author-role")).lower()
+    if author_role:
+        role = normalize_message_role(author_role)
+        if role:
+            return role
+
+    if any(
+        marker in haystack
+        for marker in (
+            "collapsible-user-message",
+            "user-message",
+            "user_query",
+            "user-query",
+            "font-user-message",
+            "query-text",
+        )
+    ):
+        return "User"
     if any(
         marker in haystack
         for marker in (
@@ -425,17 +439,6 @@ def role_from_block(platform: str, block: dict[str, Any]) -> str | None:
         )
     ):
         return "AI"
-    if any(
-        marker in haystack
-        for marker in (
-            "user-message",
-            "user_query",
-            "user-query",
-            "font-user-message",
-            "query-text",
-        )
-    ):
-        return "User"
     return None
 
 
@@ -560,6 +563,7 @@ def mostly_ui_text(text: str) -> bool:
         "copy",
         "share",
         "regenerate",
+        "展开收起",
         "thumbs up",
         "thumbs down",
         "new chat",

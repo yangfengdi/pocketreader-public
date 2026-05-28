@@ -45,7 +45,7 @@ var POCKETREADER_FORCED_ROLE_HINTS = new WeakMap();
   const DEFAULTS = {
     voice: "zh-CN-XiaoxiaoNeural",
     readerMode: "all",
-    splitByTurn: false
+    splitByTurn: true
   };
 
   const VOICES = [
@@ -736,6 +736,15 @@ function roleHintFromNode(node, platform) {
     .join(" ")
     .toLowerCase();
   if (
+    haystack.includes("collapsible-user-message") ||
+    haystack.includes("user-message") ||
+    haystack.includes("user-query") ||
+    haystack.includes("font-user-message") ||
+    haystack.includes("query-text")
+  ) {
+    return "User";
+  }
+  if (
     haystack.includes("assistant-message") ||
     haystack.includes("model-response") ||
     haystack.includes("font-claude-message") ||
@@ -743,14 +752,6 @@ function roleHintFromNode(node, platform) {
     haystack.includes("response-container")
   ) {
     return "AI";
-  }
-  if (
-    haystack.includes("user-message") ||
-    haystack.includes("user-query") ||
-    haystack.includes("font-user-message") ||
-    haystack.includes("query-text")
-  ) {
-    return "User";
   }
   return "";
 }
@@ -1709,6 +1710,7 @@ function isMostlyUiText(text) {
     "regenerate",
     "copy",
     "share",
+    "展开收起",
     "thumbs up",
     "thumbs down",
     "double-check response",

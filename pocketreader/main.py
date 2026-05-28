@@ -386,7 +386,7 @@ async def browser_capture(request: Request) -> dict[str, object]:
         reader_mode=reader_mode,
     )
 
-    if isinstance(messages, list) and split_by_turn:
+    if isinstance(messages, list) and should_split_turn_items(platform, split_by_turn):
         turns = split_messages_into_turns(messages)
         if not turns and not captured_file_ids:
             raise HTTPException(status_code=400, detail="No AI turns were found in captured content.")
@@ -528,7 +528,7 @@ def create_browser_items_from_parsed(
         reader_mode=reader_mode,
     )
 
-    if isinstance(messages, list) and split_by_turn:
+    if isinstance(messages, list) and should_split_turn_items(platform, split_by_turn):
         if include_user_question and messages and not has_both_message_roles(messages):
             raise HTTPException(
                 status_code=400,
@@ -737,6 +737,12 @@ def parse_bool(value: object, *, default: bool) -> bool:
     if isinstance(value, (int, float)):
         return bool(value)
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def should_split_turn_items(platform: str, split_by_turn: bool) -> bool:
+    # ChatGPT current-page captures are kept consistent with Claude: they should
+    # produce numbered per-turn audio instead of one unnumbered full-conversation item.
+    return split_by_turn or platform == "chatgpt"
 
 
 def numbered_title(title: str, index: int, reader_mode: str) -> str:
