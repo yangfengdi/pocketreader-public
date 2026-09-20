@@ -46,7 +46,7 @@ APP_PASSWORD=<new-password>
 
 ```bash
 cd /opt/apps/pocketreader
-docker compose up -d
+docker compose up -d --force-recreate
 ```
 
 已有 session cookie 在过期前可能继续有效。若要强制所有会话失效，同时更换 `APP_SECRET_KEY`。
@@ -64,7 +64,7 @@ docker compose up -d
 
 ```bash
 cd /opt/apps/pocketreader
-docker compose up -d
+docker compose up -d --force-recreate
 ```
 
 旧 feed 地址和旧 tokenized audio URL 会失效。普通重启不会改变 feed 地址，只要 env 文件里的 `FEED_TOKEN` 没变。
@@ -83,7 +83,7 @@ X-PocketReader-Import-Token: <IMPORT_TOKEN>
 
 ```bash
 cd /opt/apps/pocketreader
-docker compose up -d
+docker compose up -d --force-recreate
 ```
 
 然后在 Chrome 扩展设置页更新 token。更换 `IMPORT_TOKEN` 不影响 Podcast Feed。
@@ -98,13 +98,25 @@ docker compose up -d
 /etc/apps/pocketreader/pocketreader.env
 ```
 
-示例：
+备份应写到服务器私有目录，不放进代码树。为保证 SQLite 与音频文件一致，备份窗口暂停此实例；备份完成后启动。以下脚本以有 Docker 和目录权限的维护身份执行，只暂停当前实例：
 
 ```bash
-tar -czf /root/pocketreader-backup-$(date +%Y%m%d-%H%M%S).tar.gz \
-  /var/lib/apps/pocketreader \
-  /etc/apps/pocketreader/pocketreader.env
+(
+  set -eu
+  umask 077
+  cd /opt/apps/pocketreader
+  install -d -m 700 /var/backups/pocketreader
+  pr_was_running=$(docker compose ps --status running --services)
+  if [ "$pr_was_running" = "pocketreader" ]; then
+    trap 'docker compose start pocketreader' EXIT
+    docker compose stop pocketreader
+  fi
+  tar -czf /var/backups/pocketreader/backup-$(date +%Y%m%d-%H%M%S).tar.gz \
+    -C / var/lib/apps/pocketreader etc/apps/pocketreader/pocketreader.env
+)
 ```
+
+备份包含真实会话和凭证，只能私下保存和转移。恢复前停应用，保留现场副本，恢复匹配版本的数据和音频，确认 env 权限 600，再启动并验证。另保存当前源码提交号或镜像标识；定期在隔离实例演练恢复。
 
 ## 存储
 
@@ -128,7 +140,7 @@ docker compose logs --tail=200
 docker compose logs -f --tail=100
 ```
 
-Caddy 日志使用服务器现有 Caddy 行为。PocketReader snippet 没有单独配置 Caddy log file，因为生产服务器的 Caddy systemd sandbox 曾拒绝新增日志文件路径。
+Caddy 日志使用实例管理员配置的日志方式。新增日志路径时检查目录权限和 systemd 限制，不把某台服务器的配置写进公共文档。日志可能含来源 URL 或 token，不直接上传。
 
 ## 处理中断恢复
 
@@ -176,7 +188,7 @@ Unable to choose an output format
 相关测试：
 
 ```bash
-python -m unittest tests.test_tts
+python -m unittest discover -s tests -p test_tts.py
 ```
 
 ## AI Share Link 导入
@@ -308,7 +320,7 @@ node --check browser-extension/options.js
 node tests/browser_extension_capture.test.js
 ```
 
-截至当前文档更新，本地测试覆盖：
+测试套件覆盖（每次更新需重新运行）：
 
 - ChatGPT share link 解析 fixture。
 - Chrome 扩展 payload 导入。
@@ -320,3 +332,10 @@ node tests/browser_extension_capture.test.js
 - Podcast feed 兼容元数据。
 - 中断 job 恢复。
 - TTS chunk 和 ffmpeg 合并。
+
+
+## 本地维护资料与公开代码
+
+真实地址、账号、SSH 方式及共用服务器保护规则保存在仓库外。通过 `git config --get pocketreader.privateDir` 查找维护目录；公开文档中的 `reader.example.com` 必须在自己的服务器配置或私有命令参数中替换。
+
+env 修改后用 `docker compose up -d --force-recreate`，仅 `restart` 不会读取新环境。示例 URL 不含真实 token；诊断结果对外分享前需脱敏。

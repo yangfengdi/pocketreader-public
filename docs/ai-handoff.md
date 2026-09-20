@@ -11,107 +11,13 @@ PocketReader 是一个个人自用的文本转语音收听系统。核心体验�
 - 通过私有 Podcast Feed 让 Podcast App 下载和播放。
 - 通过 Chrome 扩展从 ChatGPT / Gemini / Claude 当前页面导入对话。
 
-## 生产服务器现状
+## 新维护者的起点
 
-同一台服务器上已经运行 `other_app` / other-app：
+先读仓库根目录 `AGENTS.md`、`docs/getting-started.md` 和 `docs/configuration.md`。项目运行不依赖原作者的账号、服务器、其他目录或以前的聊天记录。默认建立自己的实例。
 
-```text
-Domain: sibling.example.com
-Host: 203.0.113.10
-Paths:
-  /opt/other-app
-  /var/lib/other-app
-  /etc/other-app
-  /var/log/other-app
-Systemd:
-  other-app-update.service
-  other-app-update.timer
-  other-app-trigger.service
-```
+现有实例维护时，用 `git config --get pocketreader.privateDir` 查找本机私有 runbook。那里保存真实地址、SSH 方式、凭证位置、其他应用的保护规则和历史备份。不要把这些内容复制回公开代码、文档、issue 或 PR。
 
-PocketReader 不得修改这些路径或 systemd 服务。
-
-## Caddy 协议
-
-Caddy 已经是多应用结构：
-
-```text
-/etc/caddy/Caddyfile
-/etc/caddy/apps/other-app.caddy
-/etc/caddy/apps/pocketreader.caddy
-```
-
-PocketReader 只维护：
-
-```text
-/etc/caddy/apps/pocketreader.caddy
-```
-
-不要修改：
-
-```text
-/etc/caddy/Caddyfile
-/etc/caddy/apps/other-app.caddy
-```
-
-修改 PocketReader snippet 后必须执行：
-
-```bash
-caddy validate --config /etc/caddy/Caddyfile
-systemctl reload caddy
-curl -I https://sibling.example.com/
-curl -I https://reader.example.com/
-```
-
-如果 Caddy validation 失败，回滚方式：
-
-```bash
-mv /etc/caddy/apps/pocketreader.caddy \
-  /etc/caddy/apps/pocketreader.caddy.disabled
-caddy validate --config /etc/caddy/Caddyfile
-systemctl reload caddy
-```
-
-## PocketReader 拥有的路径
-
-```text
-/opt/apps/pocketreader
-/var/lib/apps/pocketreader
-/etc/apps/pocketreader
-/var/log/apps/pocketreader
-/etc/caddy/apps/pocketreader.caddy
-```
-
-Docker Compose 发布端口：
-
-```text
-127.0.0.1:4780:4780
-```
-
-容器内部 uvicorn 监听 `0.0.0.0`，但宿主机只暴露 loopback，由 Caddy 代理公网 HTTPS。
-
-## 重要 token
-
-生产 env 文件：
-
-```text
-/etc/apps/pocketreader/pocketreader.env
-```
-
-重要变量：
-
-- `APP_USERNAME` / `APP_PASSWORD`：网页登录。
-- `APP_SECRET_KEY`：签名 session cookie。
-- `FEED_TOKEN`：保护 RSS Feed 和音频 URL。
-- `IMPORT_TOKEN`：保护 Chrome 扩展导入接口。
-
-不要把真实 token 写入仓库。
-
-`FEED_TOKEN` 与 `IMPORT_TOKEN` 不要混用：
-
-- 更换 `FEED_TOKEN` 会让旧 Podcast Feed 和音频 URL 失效。
-- 更换 `IMPORT_TOKEN` 只会让旧扩展提交失效。
-- 正常重启不会改变任何 token，除非 env 文件被修改。
+公开部署方法见 `docs/deployment.md`。一个应用进程对应一个 worker；env 持久保存在仓库外。正常重启不轮换 token。首次生成使用 `scripts/init_env.py`，已有实例不能通过覆盖 env 来“修复”启动。
 
 ## 已实现的重要机制
 
@@ -166,50 +72,24 @@ Docker Compose 发布端口：
   - RSS 含 `atom:link`、`lastBuildDate`、`itunes:duration`、`guid isPermaLink=false`。
   - 这是为了兼容 Apple Podcasts 和 Pocket Casts。
 
-## 当前生产验证过的行为
+## 接手时需要重新验证
 
-最近一次部署后验证过：
+- 检查 `git status --short --branch`、远端和已有修改，不假定 GitHub 或生产一定是最新版本。
+- 安装依赖并运行 Python 与扩展测试，再做本地浏览器验收。
+- `/health`、登录、短文本生成、播放、音频 HEAD/Range 和自己的 Podcast 订阅分别验证。
+- 修改扩展后 reload 并刷新已打开的 AI 页面，确认当前平台 DOM 仍可解析。
+- 测试数据必须合成；数据库、原始对话和音频不随源码分发。
+- SQLite schema 在 `Database.init()` 中维护；变更要验证旧库兼容和回滚。
+- 当前没有完整多用户权限、分布式任务领取、自动存储清理或外部 TTS 服务保证。
 
-- `/health` 返回 `{"status":"ok"}`。
-- `https://reader.example.com/` 未登录时返回 `303 /login`。
-- `https://sibling.example.com/` 仍返回原来的 `401`。
-- 音频 `HEAD` 返回 `200`。
-- 音频 Range GET 返回 `206`。
-- item 18 曾因部署中断停在 `processing`，已被自动恢复并生成完成。
+## 阅读顺序与修改地图
 
-## GitHub 状态注意
+1. `README.md`、`AGENTS.md`、`docs/getting-started.md`
+2. `docs/requirements.md`、`docs/architecture.md`
+3. UI 改动：`templates/`、`static/`、`main.py`
+4. 导入改动：`importers.py`、`browser_snapshot.py`、`browser-extension/`，先读 `docs/ai-capture-design.md`
+5. TTS 改动：`tts.py`、`text.py`，先读 `docs/markdown-speech.md`
+6. 部署改动：`docs/configuration.md`、`docs/deployment.md`、`docs/operations.md`
+7. 提交与公开：`CONTRIBUTING.md`、`SECURITY.md`、`docs/open-source-release.md`
 
-本地开发机曾出现访问 `github.com:443` 超时，导致生产已经通过本地 archive 部署，但本地 git 可能显示：
-
-```text
-main...origin/main [ahead N]
-```
-
-未来 Agent 接手时应先运行：
-
-```bash
-git status --short --branch
-git log --oneline -8
-```
-
-如果本地仍 ahead，且网络恢复，应补：
-
-```bash
-git push origin main
-```
-
-不要因为远端落后就回退本地提交；生产可能已经运行本地 ahead 的版本。
-
-## 修改前建议阅读顺序
-
-1. `README.md`
-2. `docs/requirements.md`
-3. `docs/architecture.md`
-4. `docs/deployment.md`
-5. `docs/operations.md`
-6. `docs/browser-extension.md`
-7. `docs/ai-capture-design.md`
-8. `docs/markdown-speech.md`
-9. 本文件
-
-改代码前运行测试；部署前确认不会触碰 other-app/other-app。
+面向新维护者的可复制 AI 任务示例见上手指南。每次交付说明行为变化、测试和限制；不要把某台生产机器的历史验证结果当作其他实例的保证。

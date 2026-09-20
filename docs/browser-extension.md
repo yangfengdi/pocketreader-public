@@ -29,14 +29,16 @@ chrome://extensions/
 browser-extension
 ```
 
-5. 打开扩展 options page，填写：
+5. 打开扩展 options page，填写自己的实例地址和 token。默认本地地址是 `http://127.0.0.1:4780`；下方 HTTPS 地址仅为示例：
 
 ```text
 PocketReader 地址: https://reader.example.com
-IMPORT_TOKEN: /etc/apps/pocketreader/pocketreader.env 中的 IMPORT_TOKEN
+IMPORT_TOKEN: 自己实例的私有 env 或 /extension 页面中的值
 ```
 
-登录 PocketReader 后也可以从网页查看这些值：
+保存自定义 HTTPS 地址时，Chrome 会请求对该域名的访问权限；允许后才能导入。无需修改 manifest 或把真实域名提交到 Git。已有安装升级后请打开设置点一次保存，再刷新 AI 页面。
+
+登录自己的 PocketReader 后也可以从网页查看这些值：
 
 ```text
 https://reader.example.com/extension

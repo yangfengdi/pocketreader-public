@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -42,6 +41,11 @@ class Settings:
 
 
 def get_settings() -> Settings:
+    # Fail before creating directories if deployment credentials are incomplete.
+    credentials = {
+        name: required_credential(name)
+        for name in ("APP_PASSWORD", "APP_SECRET_KEY", "FEED_TOKEN", "IMPORT_TOKEN")
+    }
     data_dir = Path(os.environ.get("APP_DATA_DIR", "data")).resolve()
     log_dir = Path(os.environ.get("APP_LOG_DIR", "logs")).resolve()
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -50,11 +54,11 @@ def get_settings() -> Settings:
     audio_dir.mkdir(parents=True, exist_ok=True)
 
     return Settings(
-        username=os.environ.get("APP_USERNAME", "test-user"),
-        password=os.environ.get("APP_PASSWORD", "CHANGE_ME"),
-        secret_key=os.environ.get("APP_SECRET_KEY", secrets.token_hex(32)),
-        feed_token=os.environ.get("FEED_TOKEN", secrets.token_urlsafe(32)),
-        import_token=os.environ.get("IMPORT_TOKEN", ""),
+        username=os.environ.get("APP_USERNAME", "admin"),
+        password=credentials["APP_PASSWORD"],
+        secret_key=credentials["APP_SECRET_KEY"],
+        feed_token=credentials["FEED_TOKEN"],
+        import_token=credentials["IMPORT_TOKEN"],
         base_url=os.environ.get("APP_BASE_URL", "http://127.0.0.1:4780").rstrip("/"),
         data_dir=data_dir,
         log_dir=log_dir,
@@ -64,6 +68,15 @@ def get_settings() -> Settings:
         ),
         tts_retries=max(0, int(os.environ.get("TTS_RETRIES", "3"))),
     )
+
+
+def required_credential(name: str) -> str:
+    value = os.environ.get(name, "")
+    if not value.strip() or value.startswith(("CHANGE_ME", "replace-with-", "<")):
+        raise RuntimeError(
+            f"Configure {name} in a private env file; see scripts/init_env.py."
+        )
+    return value
 
 
 def voice_ids() -> set[str]:

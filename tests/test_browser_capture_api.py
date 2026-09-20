@@ -8,7 +8,7 @@ _tmp = tempfile.TemporaryDirectory()
 os.environ.update(
     {
         "APP_USERNAME": "test-user",
-        "APP_PASSWORD": "CHANGE_ME",
+        "APP_PASSWORD": "test-password",
         "APP_SECRET_KEY": "dev-secret",
         "FEED_TOKEN": "feed-token",
         "IMPORT_TOKEN": "import-token",

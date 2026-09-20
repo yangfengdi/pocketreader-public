@@ -1,11 +1,6 @@
+# Copy outside the repository and replace this example hostname there.
 reader.example.com {
 	encode gzip zstd
-
-	tls {
-		issuer acme {
-			disable_http_challenge
-		}
-	}
 
 	request_body {
 		max_size 50MB

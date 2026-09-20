@@ -1,6 +1,21 @@
 .DS_Store
 .env
 *.env
+.env.*
+!.env.example
+.local/
+.private/
+private/
+secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+*.bundle
+*.tar
+*.tar.gz
+*.tgz
+*.zip
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -13,4 +28,3 @@ logs/
 *.mp3
 *.sqlite3
 *.db
-

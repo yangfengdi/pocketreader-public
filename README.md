@@ -2,11 +2,15 @@
 
 PocketReader 是一个个人自用的“稍后收听”服务。它把文本、Markdown、文件、公开链接、AI 对话内容转成 MP3，并提供网页播放、离线缓存和私有 Podcast Feed，方便在 iPhone 上连续收听。
 
-当前生产地址：
+代码采用 [MIT 许可证](LICENSE)，可以 fork 后自己修改，也可以交给 AI 编程助手继续开发。每个使用者配置自己的实例、服务器和凭证，项目没有公共托管服务或通用登录账号。
 
-```text
-https://reader.example.com
-```
+| 你想做什么 | 先读哪里 |
+| --- | --- |
+| 第一次运行、接手父辈或他人的代码 | [上手指南](docs/getting-started.md) |
+| 让 AI 修改功能 | [AGENTS.md](AGENTS.md)、[AI 交接](docs/ai-handoff.md)、[贡献说明](CONTRIBUTING.md) |
+| 部署自己的实例 | [部署说明](docs/deployment.md)、[配置表](docs/configuration.md) |
+| 备份、更新和排障 | [运维说明](docs/operations.md) |
+| 公开自己的 fork | [安全与隐私](SECURITY.md)、[发布检查](docs/open-source-release.md) |
 
 ## 核心能力
 
@@ -36,7 +40,7 @@ https://reader.example.com
 - AI 页面导入采用“扩展采集、后端解析”：原始快照保存在 `browser_captures`，解析记录保存在 `browser_parse_runs`，方便后续调试和重新解析。
 - 扩展 reload 后必须刷新已经打开的 AI 页面；否则页面里残留的旧 content script 可能显示 `Extension context invalidated`。
 - 服务器保存 SQLite 数据库和 MP3 文件，目前没有自动清理策略。
-- 生产服务器上还运行着 `sibling.example.com`，PocketReader 必须与它隔离部署。
+- 每个安装者独立部署；共用服务器的隔离规则只记录在本地私有 runbook 中。
 
 ## 仓库结构
 
@@ -67,38 +71,30 @@ tests/                        回归测试
 
 ## 本地开发
 
+需要 Python 3.12+、ffmpeg（含 ffprobe）；Node.js 用于扩展测试。Docker 的基准版本是 Python 3.12，没有 npm 构建步骤。
+
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-APP_USERNAME=admin \
-APP_PASSWORD=CHANGE_ME \
-APP_SECRET_KEY=dev-secret \
-FEED_TOKEN=dev-feed-token \
-IMPORT_TOKEN=dev-import-token \
-APP_BASE_URL=http://127.0.0.1:4780 \
-.venv/bin/uvicorn pocketreader.main:app --host 127.0.0.1 --port 4780
+python3 scripts/init_env.py
+sh scripts/install_hooks.sh
+.venv/bin/uvicorn pocketreader.main:app --env-file .env --host 127.0.0.1 --port 4780 --workers 1
 ```
 
-打开：
+打开 <http://127.0.0.1:4780>。账号和随机密码在本地 `.env` 中，用编辑器在本机查看；不要把内容粘贴到 issue 或截图中。该文件被 Git 忽略。初始化脚本不会覆盖已有配置，也不会打印密码。
 
-```text
-http://127.0.0.1:4780
-```
-
-常用检查：
+先导入一小段不敏感的文本，确认生成并播放正常。网页能打开不代表外部 TTS 服务一定可用。
 
 ```bash
-python -m unittest discover -s tests
-python -m compileall pocketreader
-node --check browser-extension/background.js
-node --check browser-extension/content-script.js
-node --check browser-extension/options.js
+.venv/bin/python -m unittest discover -s tests
 node tests/browser_extension_capture.test.js
+node tests/browser_extension_settings.test.js
+python3 scripts/check_public_content.py
 ```
 
 ## 生产部署概要
 
-生产环境目录：
+Compose 默认目录（不是作者服务器的访问授权）：
 
 ```text
 /opt/apps/pocketreader
@@ -123,12 +119,12 @@ Docker 只在宿主机 loopback 暴露后端：
 
 ## TTS 实现说明
 
-TTS 方案沿用 `../pte_speaking` 的方向：
+本项目运行不依赖作者的其他仓库：
 
 - 使用 `edge-tts` 调用 Microsoft Edge TTS。
 - 使用 `ffprobe` 检查每个 chunk 和最终 MP3 的时长。
 - 使用 `ffmpeg` 合并多个 MP3 chunk。
-- 默认 `TTS_MAX_CHARS_PER_CHUNK=1800`，显著低于免费 API 单次生成 10 分钟 MP3 的实用限制。
+- 默认 `TTS_MAX_CHARS_PER_CHUNK=1800`，降低长文单次请求失败的风险。
 - 如果生成过程中进程被重启，启动时会自动把遗留的 `processing` 条目重新排队。
 
 ## 安全说明
@@ -139,3 +135,15 @@ TTS 方案沿用 `../pte_speaking` 的方向：
 - `FEED_TOKEN` 保护 Podcast Feed 和 tokenized audio URLs。
 - `IMPORT_TOKEN` 只给 Chrome 扩展导入接口使用。
 - 更换 `FEED_TOKEN` 会让旧 feed 地址和旧音频 token URL 失效；普通重启不会失效。
+
+## 现有实例升级注意
+
+现在必须显式设置 `APP_PASSWORD`、`APP_SECRET_KEY`、`FEED_TOKEN`、`IMPORT_TOKEN`。缺失或模板占位值会使启动失败；不再提供固定默认密码或启动时临时生成的 token。升级前检查私有 env，保留现有有效 token，避免订阅和扩展失效。
+
+扩展不再内置作者的域名，默认使用本地地址。已有扩展设置保留；自定义 HTTPS 实例在设置页点“保存”时授权该域名，然后刷新 AI 页面。
+
+本项目是单用户个人工具，没有公开注册、多租户或分布式任务队列。`edge-tts` 会把待朗读文本发送给 Microsoft Edge TTS，不是完全离线语音引擎，也没有第三方服务可用性承诺。其他限制见 [SECURITY.md](SECURITY.md)。
+
+## 自动检查
+
+本地 Git hooks 检查提交和推送内容。GitHub Actions 以[待启用模板](docs/ci.md)提供，尚未启用；拥有工作流权限后可按说明开启。

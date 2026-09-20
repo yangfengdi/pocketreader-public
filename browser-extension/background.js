@@ -2,7 +2,7 @@
 
 const SETTINGS_VERSION = 2;
 const DEFAULTS = {
-  baseUrl: "https://reader.example.com",
+  baseUrl: "http://127.0.0.1:4780",
   importToken: "",
   voice: "zh-CN-XiaoxiaoNeural",
   readerMode: "all",

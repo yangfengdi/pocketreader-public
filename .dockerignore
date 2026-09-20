@@ -1,0 +1,12 @@
+# Only application source and dependency declarations enter the build context.
+**
+!Dockerfile
+!requirements.txt
+!pocketreader/
+!pocketreader/**
+pocketreader/**/__pycache__/
+pocketreader/**/*.pyc
+pocketreader/**/*.env
+pocketreader/**/.env*
+pocketreader/**/*.key
+pocketreader/**/*.pem

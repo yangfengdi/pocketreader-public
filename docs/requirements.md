@@ -7,7 +7,7 @@
 目标设备优先适配：
 
 ```text
-iPhone 13 Pro Max
+iPhone / 移动端 Safari
 ```
 
 ## 核心使用场景
@@ -85,4 +85,4 @@ iPhone 13 Pro Max
 - 扩展 reload 后，已经打开的 AI 页面必须刷新；否则旧 content script 会失去 runtime 上下文并显示 `Extension context invalidated`。
 - Gemini / Claude share link 后端抓取不稳定，主要推荐 Chrome 扩展导入。
 - Pocket Cast 可能有自己的服务端缓存，feed 修改后它不一定像 Apple Podcasts 那样立即显示所有新条目。
-- 生产服务器到 GitHub 的网络在某些时间可能超时；部署可以用本地 archive 上传，但仍应在网络恢复后补 `git push`。
+- 网络受限时可使用审核过的 Git archive 部署；不要打包包含私有数据的整个工作区。
